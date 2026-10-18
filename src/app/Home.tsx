@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { formatDateLong, parseISODate } from '../domain/dates'
 import {
   addExtraIncome,
+  adjustPeriodBudget,
   allocateExtraIncome,
   confirmPayday,
   derive,
@@ -47,6 +48,7 @@ export function Home({
   const [error, setError] = useState<string | null>(null)
   const [incomeOpen, setIncomeOpen] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
+  const [budgetOpen, setBudgetOpen] = useState(false)
   const pending = pendingPayday(state, today)
   const todayExpense = derived.expensesByDate[today]
   const nextForecast = useMemo(() => {
@@ -62,7 +64,7 @@ export function Home({
       ? { date: period.nextPayday, kind: period.kind === 'advance' ? 'аванс' : 'зарплата' }
       : null
   const undistributedTotal = derived.undistributed.reduce((sum, item) => sum + item.remaining, 0)
-  const periodBudget = derived.dailyLimit * derived.remainingDays
+  const periodBudget = derived.dailyLimit * derived.remainingDays + derived.unusedBudget
 
   return (
     <section className="home">
@@ -148,10 +150,26 @@ export function Home({
             </button>
           ) : null}
 
-          <div className="stat-row">
-            <span className="stat-label">Бюджет до выплаты</span>
-            <span className="stat-value">{formatMoney(periodBudget)}</span>
-          </div>
+        <button
+          type="button"
+          className="stat-row"
+          onClick={() => setBudgetOpen(true)}
+          aria-label="Скорректировать бюджет до выплаты"
+        >
+          <span className="stat-label">Бюджет до выплаты</span>
+          <span className="stat-value">
+            {formatMoney(periodBudget)}
+            {derived.remainingDays > 0 ? (
+              <span className="stat-sub">
+                {formatMoney(derived.dailyLimit)} × {derived.remainingDays}{' '}
+                {daysWord(derived.remainingDays)} · изменить
+              </span>
+            ) : null}
+          </span>
+          <span className="stat-chevron">
+            <ChevronRightIcon size={18} />
+          </span>
+        </button>
         </div>
 
         {pending ? (
@@ -178,6 +196,17 @@ export function Home({
         {error ? <ErrorBanner text={error} /> : null}
       </div>
 
+      {budgetOpen && derived.currentPeriod && derived.remainingDays > 0 ? (
+        <BudgetSheet
+          state={state}
+          derived={derived}
+          today={today}
+          periodBudget={periodBudget}
+          onClose={() => setBudgetOpen(false)}
+          onChange={onChange}
+          onError={setError}
+        />
+      ) : null}
       {incomeOpen ? (
         <IncomeModal
           state={state}
@@ -208,6 +237,78 @@ function daysWord(n: number): string {
   if (mod10 === 1 && mod100 !== 11) return 'день'
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня'
   return 'дней'
+}
+
+function BudgetSheet({
+  state,
+  derived,
+  today,
+  periodBudget,
+  onClose,
+  onChange,
+  onError,
+}: {
+  state: AppState
+  derived: DerivedState
+  today: string
+  periodBudget: number
+  onClose: () => void
+  onChange: (next: AppState) => Promise<void>
+  onError: (text: string) => void
+}) {
+  const [raw, setRaw] = useState(
+    formatMoney(periodBudget, { withCurrency: false, hideZeroKopecks: true }),
+  )
+  const days = derived.remainingDays
+  const parsed = parseMoneyInput(raw)
+  const newLimit = parsed != null && parsed >= 0 && days > 0 ? Math.trunc(parsed / days) : null
+
+  return (
+    <Sheet title="Бюджет до выплаты" onClose={onClose}>
+      <div className="sheet-body">
+        <Field
+          label="Сколько денег осталось до выплаты"
+          hint={`Дней до выплаты: ${days} (включая сегодня) · текущий лимит ${formatMoney(derived.dailyLimit)} в день`}
+        >
+          <input
+            className="input input-amount"
+            inputMode="decimal"
+            value={raw}
+            onChange={(event) => setRaw(event.target.value)}
+            autoFocus
+          />
+        </Field>
+        {newLimit != null && newLimit !== derived.dailyLimit ? (
+          <p className="hint-card">
+            Новый дневной лимит: <strong>{formatMoney(newLimit)}</strong> ({formatMoney(newLimit)} × {days}{' '}
+            {daysWord(days)}). Сегодняшняя запись расходов будет пересчитана по новому лимиту.
+          </p>
+        ) : null}
+        <div className="sheet-actions">
+          <Button
+            block
+            size="lg"
+            onClick={async () => {
+              const amount = parseMoneyInput(raw)
+              if (amount == null || amount < 0) {
+                onError('Укажите неотрицательную сумму бюджета')
+                return
+              }
+              const result = adjustPeriodBudget(state, amount, today)
+              if (!result.ok) {
+                onError(result.error)
+                return
+              }
+              await onChange(result.state)
+              onClose()
+            }}
+          >
+            Пересчитать дневной лимит
+          </Button>
+        </div>
+      </div>
+    </Sheet>
+  )
 }
 
 function IncomeModal({

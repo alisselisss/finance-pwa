@@ -9,6 +9,7 @@ import {
 } from './dates'
 import {
   addExtraIncome,
+  adjustPeriodBudget,
   allocateExtraIncome,
   archiveAccount,
   completeOnboarding,
@@ -277,6 +278,44 @@ describe('хранение, история и валидация', () => {
     if (!edited.ok) throw new Error(edited.error)
     expect(edited.warning).toBeTruthy()
     expect(derive(edited.state, '2026-10-11').freeMoney).toBe(0)
+  })
+
+  it('удаляет накопительный счёт с ненулевым балансом только в принудительном режиме', () => {
+    const state = onboarded()
+    const created = createAccount(state, 'Копилка', 5_000_00, '2026-10-11')
+    if (!created.ok) throw new Error(created.error)
+    const accountId = String(created.state.events[created.state.events.length - 1].payload.accountId)
+    const refused = archiveAccount(created.state, accountId, '2026-10-11')
+    expect(refused.ok).toBe(false)
+    const forced = archiveAccount(created.state, accountId, '2026-10-11', true)
+    expect(forced.ok).toBe(true)
+    if (!forced.ok) return
+    const after = derive(forced.state, '2026-10-11')
+    expect(after.accounts.find((item) => item.id === accountId)?.archived).toBe(true)
+    // «Подушка» не тронута: 10 000 стартовых + 10 000 из аванса
+    expect(after.accounts.find((item) => item.id === 'acc-1')?.balance).toBe(20_000_00)
+  })
+
+  it('пересчитывает дневной лимит при ручной корректировке бюджета', () => {
+    const state = onboarded()
+    // период 10–23 октября; на 18 октября осталось 5 дней (включая сегодня)
+    expect(derive(state, '2026-10-18').remainingDays).toBe(5)
+    const adjusted = adjustPeriodBudget(state, 60_000_00, '2026-10-18')
+    expect(adjusted.ok).toBe(true)
+    if (!adjusted.ok) return
+    const after = derive(adjusted.state, '2026-10-18')
+    expect(after.dailyLimit).toBe(12_000_00)
+    expect(after.remainingDays).toBe(5)
+    // копеечный хвост уходит в неиспользованный бюджет
+    const odd = adjustPeriodBudget(state, 60_000_53, '2026-10-18')
+    expect(odd.ok).toBe(true)
+    if (!odd.ok) return
+    const afterOdd = derive(odd.state, '2026-10-18')
+    expect(afterOdd.dailyLimit).toBe(12_000_10)
+    expect(afterOdd.unusedBudget).toBe(derive(state, '2026-10-18').unusedBudget + 3)
+    // отрицательная сумма и законченный период отклоняются
+    expect(adjustPeriodBudget(state, -1, '2026-10-18').ok).toBe(false)
+    expect(adjustPeriodBudget(state, 60_000_00, '2026-10-23').ok).toBe(false)
   })
 
   it('отклоняет пустые значения, отрицательные суммы и некорректные даты', () => {

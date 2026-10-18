@@ -257,14 +257,18 @@ function AccountDetail({
 
       {deleteOpen ? (
         <ConfirmDialog
-          title="Удалить счёт?"
-          text="Удалить можно только счёт с нулевым балансом. Пополнения из истории останутся в журнале операций."
+          title={selected.balance > 0 ? `Удалить счёт с балансом ${formatMoney(selected.balance)}?` : 'Удалить счёт?'}
+          text={
+            selected.balance > 0
+              ? `На счёте «${selected.name}» ${formatMoney(selected.balance)}. Удалённый баланс выйдет из учёта накоплений: он не попадёт ни в свободные деньги, ни в дневной бюджет. Пополнения останутся в истории операций.`
+              : 'Пополнения из истории операций останутся в журнале.'
+          }
           confirmLabel="Удалить"
           tone="danger"
           onResolve={async (ok) => {
             setDeleteOpen(false)
             if (!ok) return
-            const result = archiveAccount(state, selected.id, today)
+            const result = archiveAccount(state, selected.id, today, true)
             if (!result.ok) setError(result.error)
             else {
               await onChange(result.state)

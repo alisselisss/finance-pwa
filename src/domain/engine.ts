@@ -1,6 +1,6 @@
 import { compareDates, parseISODate, toISODate, type CalendarDate } from './dates'
 import { createId } from './ids'
-import { formatMoney, splitEvenly, type Money, ZERO } from './money'
+import { formatMoney, isMoney, splitEvenly, type Money, ZERO } from './money'
 import {
   budgetDayCount,
   inferPaydayKind,
@@ -690,11 +690,16 @@ export function renameAccount(state: AppState, accountId: string, name: string, 
   }
 }
 
-export function archiveAccount(state: AppState, accountId: string, dateIso: string): ActionResult {
+export function archiveAccount(
+  state: AppState,
+  accountId: string,
+  dateIso: string,
+  force = false,
+): ActionResult {
   const derived = derive(state, dateIso)
   const account = derived.accounts.find((item) => item.id === accountId)
   if (!account) return { ok: false, error: 'Счёт не найден' }
-  if (account.balance !== 0) {
+  if (account.balance !== 0 && !force) {
     return { ok: false, error: 'Нельзя удалить счёт с ненулевым балансом. Сначала распределите остаток.' }
   }
   const accounts = state.accounts.map((item) =>
@@ -708,10 +713,41 @@ export function archiveAccount(state: AppState, accountId: string, dateIso: stri
         id: createId(),
         type: 'account_archived',
         date: dateIso,
-        description: `Счёт «${account.name}» удалён`,
-        payload: { accountId },
+        description:
+          account.balance !== 0
+            ? `Счёт «${account.name}» удалён, баланс ${formatMoney(account.balance)} исключён из учёта`
+            : `Счёт «${account.name}» удалён`,
+        payload: { accountId, closedBalance: account.balance },
       },
     ),
+  }
+}
+
+/**
+ * Ручная корректировка: пользователь задаёт, сколько денег реально осталось
+ * до следующей выплаты. Сумма делится по оставшимся дням (включая сегодня)
+ * через существующий механизм limit_recalc; копеечный хвост уходит в
+ * unusedBudget и добавится к свободным деньгам при следующей выплате.
+ */
+export function adjustPeriodBudget(state: AppState, remainingBudget: Money, dateIso: string): ActionResult {
+  if (!isMoney(remainingBudget) || remainingBudget < 0) {
+    return { ok: false, error: 'Укажите неотрицательную сумму бюджета' }
+  }
+  const derived = derive(state, dateIso)
+  if (!derived.currentPeriod || derived.remainingDays <= 0) {
+    return { ok: false, error: 'Период уже закончился — подтвердите поступление' }
+  }
+  const days = derived.remainingDays
+  const { perPart, remainder } = splitEvenly(remainingBudget, days)
+  return {
+    ok: true,
+    state: pushEvent(state, {
+      id: createId(),
+      type: 'limit_recalc',
+      date: dateIso,
+      description: 'Ручная корректировка бюджета',
+      payload: { newLimit: perPart, unusedBudget: derived.unusedBudget + remainder },
+    }),
   }
 }
 
