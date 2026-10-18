@@ -10,6 +10,7 @@ import {
   remainingCalendarDays,
   remainingDaysAfter,
   requireDate,
+  scheduledPaydayFor,
   upcomingPayday,
 } from './period'
 import {
@@ -382,7 +383,12 @@ export function completeOnboarding(
   const lastPayday = requireDate(draft.lastPayday!)
   const kind = draft.lastPaydayKind ?? inferPaydayKind(lastPayday, settings)
   if (!kind) return { ok: false, error: 'Не удалось определить тип последней выплаты' }
-  const work = workMonthForPayday(lastPayday, kind, settings.salaryDay)
+  // Период оплаты — по плановой дате (перенос с нерабочего дня не меняет период)
+  const scheduledLast = scheduledPaydayFor(
+    lastPayday,
+    kind === 'advance' ? settings.advanceDay : settings.salaryDay,
+  )
+  const work = workMonthForPayday(scheduledLast, kind, settings.salaryDay)
   const nextPay = nextPayday(lastPayday, settings, kind)
   const days = budgetDayCount(lastPayday, nextPay.date)
   if (days <= 0) return { ok: false, error: 'Некорректный бюджетный период: следующая выплата должна быть позже текущей' }
@@ -526,7 +532,13 @@ export function confirmPayday(
   if (!date) return { ok: false, error: 'Некорректная дата' }
 
   const derived = derive(state, input.date)
-  const work = workMonthForPayday(date, input.kind, state.settings.salaryDay)
+  // Период оплаты — по плановой дате выплаты, даже если деньги получены
+  // раньше из-за переноса с нерабочего дня
+  const scheduled = scheduledPaydayFor(
+    date,
+    input.kind === 'advance' ? state.settings.advanceDay : state.settings.salaryDay,
+  )
+  const work = workMonthForPayday(scheduled, input.kind, state.settings.salaryDay)
   const key = periodKey(input.kind, work.year, work.month)
   if (derived.confirmedPeriodKeys.includes(key)) {
     return { ok: false, error: 'Эта выплата уже зачислена' }

@@ -1,4 +1,5 @@
-import { daysInMonth, type CalendarDate, clampMonthDay, eachDate, isWeekday, addDays } from './dates'
+import { daysInMonth, type CalendarDate, clampMonthDay, eachDate, addDays } from './dates'
+import { isWorkingDay } from '../data/production-calendar'
 import { roundDiv, type Money } from './money'
 
 export const DEFAULT_NDFL_BPS = 1300
@@ -9,8 +10,8 @@ export function netFromGross(gross: Money, ndflBps: number = DEFAULT_NDFL_BPS): 
   return roundDiv(gross * (10000 - ndflBps), 10000)
 }
 
-export function countWeekdays(start: CalendarDate, endInclusive: CalendarDate): number {
-  return eachDate(start, addDays(endInclusive, 1)).filter(isWeekday).length
+export function countWorkingDays(start: CalendarDate, endInclusive: CalendarDate): number {
+  return eachDate(start, addDays(endInclusive, 1)).filter(isWorkingDay).length
 }
 
 export function workingDaysInMonth(year: number, month: number): {
@@ -19,8 +20,8 @@ export function workingDaysInMonth(year: number, month: number): {
   total: number
 } {
   const dim = daysInMonth(year, month)
-  const firstHalf = countWeekdays({ y: year, m: month, d: 1 }, { y: year, m: month, d: 15 })
-  const secondHalf = countWeekdays({ y: year, m: month, d: 16 }, { y: year, m: month, d: dim })
+  const firstHalf = countWorkingDays({ y: year, m: month, d: 1 }, { y: year, m: month, d: 15 })
+  const secondHalf = countWorkingDays({ y: year, m: month, d: 16 }, { y: year, m: month, d: dim })
   return { firstHalf, secondHalf, total: firstHalf + secondHalf }
 }
 

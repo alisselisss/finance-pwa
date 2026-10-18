@@ -234,10 +234,11 @@ describe('дополнительные поступления и зарплат�
     expect(after.freeMoney).toBe(before.freeMoney)
     const pending = pendingPayday(second.state, '2026-10-18')
     expect(pending?.kind).toBe('salary')
-    expect(pending?.date).toBe('2026-10-18')
+    // 18 октября 2026 — воскресенье: фактическая выплата в пятницу 16-го
+    expect(pending?.date).toBe('2026-10-16')
     expect(pending?.expectedAmount).toBe(43_500_00)
     const confirmed = confirmPayday(second.state, {
-      date: '2026-10-18',
+      date: '2026-10-16',
       kind: 'salary',
       amount: 43_500_00,
       saved: 10_000_00,
@@ -245,9 +246,9 @@ describe('дополнительные поступления и зарплат�
     })
     if (!confirmed.ok) throw new Error(confirmed.error)
     const done = derive(confirmed.state, '2026-10-18')
-    // новый период: 18 октября → 10 ноября, 23 дня, бюджет 33 500 ₽
+    // новый период: 16 октября → 10 ноября, бюджет 33 500 ₽ на 25 дней
     expect(done.remainingDays).toBe(23)
-    expect(done.dailyLimit).toBe(splitEvenly(33_500_00, 23).perPart)
+    expect(done.dailyLimit).toBe(splitEvenly(33_500_00, 25).perPart)
   })
 })
 

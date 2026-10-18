@@ -119,6 +119,8 @@ export interface PaydayForecast {
   workPeriod: string
   periodKey: string
   confirmed: boolean
+  /** Установленная дата выплаты, если фактическая смещена на предыдущий рабочий день. */
+  scheduledDate?: string
 }
 
 export interface OverspendPreview {
