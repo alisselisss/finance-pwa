@@ -24,7 +24,7 @@ import {
   Sheet,
   ThemeToggle,
 } from './components'
-import { AlertIcon, ChevronRightIcon, CoinsIcon, InfoIcon } from './icons'
+import { AlertIcon, ChevronRightIcon, CoinsIcon } from './icons'
 import { navigate } from './router'
 import type { useTheme } from './theme'
 
@@ -63,7 +63,6 @@ export function Home({
     : period
       ? { date: period.nextPayday, kind: period.kind === 'advance' ? 'аванс' : 'зарплата' }
       : null
-  const undistributedTotal = derived.undistributed.reduce((sum, item) => sum + item.remaining, 0)
   const periodBudget = derived.dailyLimit * derived.remainingDays + derived.unusedBudget
 
   return (
@@ -87,7 +86,7 @@ export function Home({
           <p className="hero-eyebrow">Свободные деньги</p>
           <Amount value={derived.freeMoney} size="xl" tone={derived.freeMoney < 0 ? 'bad' : 'good'} />
           <p className="hero-hint">
-            Накопилось сверх дневного лимита — можно потратить. Это не остаток на карте.
+            Накопилось сверх дневного лимита — можно потратить.
           </p>
         </div>
       </div>
@@ -162,7 +161,7 @@ export function Home({
             {derived.remainingDays > 0 ? (
               <span className="stat-sub">
                 {formatMoney(derived.dailyLimit)} × {derived.remainingDays}{' '}
-                {daysWord(derived.remainingDays)} · изменить
+                {daysWord(derived.remainingDays)}
               </span>
             ) : null}
           </span>
@@ -183,13 +182,6 @@ export function Home({
             }
           >
             Пора оформить {pending.kind === 'advance' ? 'аванс' : 'зарплату'} за {pending.workPeriod}.
-          </Banner>
-        ) : null}
-
-        {undistributedTotal > 0 ? (
-          <Banner tone="info" icon={<InfoIcon size={20} />}>
-            Нераспределённый остаток поступлений: {formatMoney(undistributedTotal)}. Он не входит ни в дневной
-            бюджет, ни в накопления.
           </Banner>
         ) : null}
 
@@ -330,8 +322,6 @@ function IncomeModal({
   const [date, setDate] = useState(today)
   const [description, setDescription] = useState('')
   const [stage, setStage] = useState<'form' | 'split'>('form')
-  const [working, setWorking] = useState(state)
-  const [incomeId, setIncomeId] = useState<string | null>(null)
   const [incomeAmount, setIncomeAmount] = useState(0)
   const [savingsRaw, setSavingsRaw] = useState('0')
   const [budgetRaw, setBudgetRaw] = useState('0')
@@ -340,33 +330,30 @@ function IncomeModal({
   const savings = parseMoneyInput(savingsRaw || '0') ?? 0
   const budget = parseMoneyInput(budgetRaw || '0') ?? 0
   const leftover = incomeAmount - savings - budget
-  const limitPreview = previewBudgetIncrease(working, date, budget)
+  const limitPreview = previewBudgetIncrease(state, date, budget)
 
-  async function createIncome() {
+  function goToSplit() {
     const amount = parseMoneyInput(amountRaw)
     if (!amount || amount <= 0) {
       onError('Укажите сумму поступления')
       return
     }
-    const result = addExtraIncome(working, { date, amount, description })
-    if (!result.ok || !result.incomeId) {
-      onError(result.ok ? 'Не удалось сохранить поступление' : result.error)
-      return
-    }
-    setIncomeId(result.incomeId)
     setIncomeAmount(amount)
-    setWorking(result.state)
-    await onChange(result.state)
     setStage('split')
   }
 
+  /**
+   * Записываем только распределённую часть и одним действием:
+   * пока распределение не подтверждено, поступление не сохраняется —
+   * закрытие шита ничего не добавляет в учёт.
+   */
   async function allocate() {
-    if (!incomeId) return
-    if (savings + budget > incomeAmount) {
+    const total = savings + budget
+    if (total > incomeAmount) {
       onError('Нельзя распределить больше, чем поступило')
       return
     }
-    if (savings + budget === 0) {
+    if (total === 0) {
       onClose()
       return
     }
@@ -374,8 +361,13 @@ function IncomeModal({
       onError('Выберите накопительный счёт')
       return
     }
-    const result = allocateExtraIncome(working, {
-      incomeId,
+    const created = addExtraIncome(state, { date, amount: total, description })
+    if (!created.ok || !created.incomeId) {
+      onError(created.ok ? 'Не удалось сохранить поступление' : created.error)
+      return
+    }
+    const result = allocateExtraIncome(created.state, {
+      incomeId: created.incomeId,
       date,
       savings: savings > 0 ? [{ accountId, amount: savings }] : [],
       budgetAmount: budget,
@@ -409,7 +401,7 @@ function IncomeModal({
             <input className="input" value={description} onChange={(event) => setDescription(event.target.value)} />
           </Field>
           <div className="sheet-actions">
-            <Button block size="lg" onClick={createIncome}>
+            <Button block size="lg" onClick={goToSplit}>
               Далее
             </Button>
           </div>
@@ -476,7 +468,9 @@ function IncomeModal({
             </p>
           ) : null}
           <p className={leftover < 0 ? 'field-error' : 'muted'}>
-            Останется нераспределённым: {formatMoney(leftover)}
+            {leftover > 0
+              ? `Не будет записано: ${formatMoney(leftover)} — в учёт попадёт только распределённая часть`
+              : `В учёт будет записано: ${formatMoney(savings + budget)}`}
           </p>
           <div className="sheet-actions">
             <Button block size="lg" onClick={allocate}>
