@@ -210,7 +210,6 @@
   min-height: min-content;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   margin-top: -80px;
 }
 
