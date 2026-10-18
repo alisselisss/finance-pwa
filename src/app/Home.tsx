@@ -8,28 +8,43 @@ import {
   expectedSalaryAmount,
   pendingPayday,
   previewBudgetIncrease,
-  previewOverspend,
-  recordExpense,
 } from '../domain/engine'
 import { buildForecast } from '../domain/forecast'
 import { formatMoney, parseMoneyInput } from '../domain/money'
 import type { AppState, DerivedState } from '../domain/types'
-import { Amount, Button, ErrorBanner, Field, Modal } from './components'
+import {
+  Amount,
+  Banner,
+  Button,
+  ErrorBanner,
+  Field,
+  IconButton,
+  ProgressBar,
+  Sheet,
+  ThemeToggle,
+} from './components'
+import { AlertIcon, ChevronRightIcon, CoinsIcon, InfoIcon } from './icons'
 import { navigate } from './router'
+import type { useTheme } from './theme'
+
+type Theme = ReturnType<typeof useTheme>
 
 export function Home({
   state,
   derived,
   today,
   onChange,
+  theme,
+  onOpenExpense,
 }: {
   state: AppState
   derived: DerivedState
   today: string
   onChange: (next: AppState) => Promise<void>
+  theme: Theme
+  onOpenExpense: () => void
 }) {
   const [error, setError] = useState<string | null>(null)
-  const [expenseOpen, setExpenseOpen] = useState(false)
   const [incomeOpen, setIncomeOpen] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
   const pending = pendingPayday(state, today)
@@ -40,99 +55,129 @@ export function Home({
     return items.find((item) => !item.confirmed) ?? null
   }, [state.settings, today, derived.confirmedPeriodKeys])
 
+  const period = derived.currentPeriod
+  const payday = nextForecast
+    ? { date: nextForecast.date, kind: nextForecast.kind === 'advance' ? 'аванс' : 'зарплата' }
+    : period
+      ? { date: period.nextPayday, kind: period.kind === 'advance' ? 'аванс' : 'зарплата' }
+      : null
+  const undistributedTotal = derived.undistributed.reduce((sum, item) => sum + item.remaining, 0)
+  const periodBudget = derived.dailyLimit * derived.remainingDays
+
   return (
     <section className="home">
-      <p className="eyebrow">Свободные деньги</p>
-      <div className="hero-amount">
-        <Amount value={derived.freeMoney} size="xl" tone={derived.freeMoney < 0 ? 'bad' : 'good'} />
-      </div>
-      <p className="muted center">
-        Можно потратить сверх дневного лимита. Это не остаток на карте.
-      </p>
-
-      <div className="stats">
-        <div>
-          <span>Дневной лимит</span>
-          <strong>
-            <Amount value={derived.dailyLimit} />
-          </strong>
+      <header className="app-header">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">₽</span>
+          <span className="brand-name">Финансы</span>
         </div>
-        <div>
-          <span>До выплаты</span>
-          <strong>
-            {derived.remainingDays} {daysWord(derived.remainingDays)}
-          </strong>
+        <div className="header-actions">
+          <IconButton label="Добавить поступление" onClick={() => setIncomeOpen(true)}>
+            <CoinsIcon size={20} />
+          </IconButton>
+          <ThemeToggle effective={theme.effective} onToggle={theme.toggle} />
+        </div>
+      </header>
+
+      <div className="home-center">
+        <div className={`hero ${derived.freeMoney < 0 ? 'hero-negative' : 'hero-positive'}`}>
+          <div className="hero-glow" aria-hidden="true" />
+          <p className="hero-eyebrow">Свободные деньги</p>
+          <Amount value={derived.freeMoney} size="xl" tone={derived.freeMoney < 0 ? 'bad' : 'good'} />
+          <p className="hero-hint">
+            Накопилось сверх дневного лимита — можно потратить. Это не остаток на карте.
+          </p>
         </div>
       </div>
-      {nextForecast ? (
-        <p className="center muted">
-          Следующая выплата: {formatDateLong(parseISODate(nextForecast.date)!)} ·{' '}
-          {nextForecast.kind === 'advance' ? 'аванс' : 'зарплата'} · {formatMoney(nextForecast.amount)}
-        </p>
-      ) : null}
 
-      {todayExpense == null ? (
-        <p className="banner">Сегодня расходы ещё не записаны</p>
-      ) : (
-        <p className="banner banner-ok">
-          Сегодня потрачено {formatMoney(todayExpense)}.{' '}
-          <button type="button" className="text-btn" onClick={() => setExpenseOpen(true)}>
-            Изменить
+      <div className="home-secondary">
+        <div className="stat-list">
+          <button
+            type="button"
+            className="stat-row stat-row-column"
+            onClick={onOpenExpense}
+            aria-label={
+              todayExpense == null
+                ? 'Записать расходы за сегодня'
+                : `Изменить расходы за сегодня: ${formatMoney(todayExpense)}`
+            }
+          >
+            <span className="stat-line">
+              <span className="stat-label">Сегодня потрачено</span>
+              <span className="stat-value">
+                {todayExpense == null ? (
+                  <span className="stat-sub">ещё не записано</span>
+                ) : (
+                  <Amount value={todayExpense} size="md" />
+                )}
+              </span>
+            </span>
+            <ProgressBar value={todayExpense ?? 0} max={derived.dailyLimit} />
           </button>
-        </p>
-      )}
 
-      {pending ? (
-        <div className="banner banner-warn">
-          Пора оформить {pending.kind === 'advance' ? 'аванс' : 'зарплату'} за {pending.workPeriod}.
-          <Button block onClick={() => setPayOpen(true)}>
-            Подтвердить поступление
-          </Button>
+          <div className="stat-row">
+            <span className="stat-label">Дневной лимит</span>
+            <span className="stat-value">
+              {formatMoney(derived.dailyLimit)}
+              <span className="stat-sub">действует до выплаты</span>
+            </span>
+          </div>
+
+          {payday ? (
+            <button
+              type="button"
+              className="stat-row"
+              onClick={() => navigate({ name: 'forecast' })}
+              aria-label="Открыть график будущих поступлений"
+            >
+              <span className="stat-label">Следующая выплата</span>
+              <span className="stat-value">
+                {formatDateLong(parseISODate(payday.date)!)}
+                <span className="stat-sub">
+                  {payday.kind} ·{' '}
+                  {derived.remainingDays <= 0
+                    ? 'сегодня'
+                    : derived.remainingDays === 1
+                      ? 'завтра'
+                      : `через ${derived.remainingDays} ${daysWord(derived.remainingDays)}`}
+                </span>
+              </span>
+              <span className="stat-chevron">
+                <ChevronRightIcon size={18} />
+              </span>
+            </button>
+          ) : null}
+
+          <div className="stat-row">
+            <span className="stat-label">Бюджет до выплаты</span>
+            <span className="stat-value">{formatMoney(periodBudget)}</span>
+          </div>
         </div>
-      ) : null}
 
-      {derived.undistributed.length > 0 ? (
-        <p className="banner">
-          Нераспределено: {formatMoney(derived.undistributed.reduce((sum, item) => sum + item.remaining, 0))}
-        </p>
-      ) : null}
+        {pending ? (
+          <Banner
+            tone="warn"
+            icon={<AlertIcon size={20} />}
+            action={
+              <Button block onClick={() => setPayOpen(true)}>
+                Подтвердить поступление
+              </Button>
+            }
+          >
+            Пора оформить {pending.kind === 'advance' ? 'аванс' : 'зарплату'} за {pending.workPeriod}.
+          </Banner>
+        ) : null}
 
-      {error ? <ErrorBanner text={error} /> : null}
+        {undistributedTotal > 0 ? (
+          <Banner tone="info" icon={<InfoIcon size={20} />}>
+            Нераспределённый остаток поступлений: {formatMoney(undistributedTotal)}. Он не входит ни в дневной
+            бюджет, ни в накопления.
+          </Banner>
+        ) : null}
 
-      <div className="stack">
-        <Button block onClick={() => setExpenseOpen(true)}>
-          {todayExpense == null ? 'Записать расходы за сегодня' : 'Изменить расходы за сегодня'}
-        </Button>
-        <Button variant="secondary" block onClick={() => setIncomeOpen(true)}>
-          Добавить поступление
-        </Button>
+        {error ? <ErrorBanner text={error} /> : null}
       </div>
 
-      <nav className="grid-nav">
-        <button type="button" onClick={() => navigate({ name: 'savings' })}>
-          Накопления
-        </button>
-        <button type="button" onClick={() => navigate({ name: 'forecast' })}>
-          Будущие поступления
-        </button>
-        <button type="button" onClick={() => navigate({ name: 'history' })}>
-          История
-        </button>
-        <button type="button" onClick={() => navigate({ name: 'settings' })}>
-          Настройки
-        </button>
-      </nav>
-
-      {expenseOpen ? (
-        <ExpenseModal
-          state={state}
-          today={today}
-          initial={todayExpense}
-          onClose={() => setExpenseOpen(false)}
-          onChange={onChange}
-          onError={setError}
-        />
-      ) : null}
       {incomeOpen ? (
         <IncomeModal
           state={state}
@@ -163,100 +208,6 @@ function daysWord(n: number): string {
   if (mod10 === 1 && mod100 !== 11) return 'день'
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня'
   return 'дней'
-}
-
-function ExpenseModal({
-  state,
-  today,
-  initial,
-  onClose,
-  onChange,
-  onError,
-}: {
-  state: AppState
-  today: string
-  initial?: number
-  onClose: () => void
-  onChange: (next: AppState) => Promise<void>
-  onError: (text: string) => void
-}) {
-  const [raw, setRaw] = useState(
-    initial == null ? '' : formatMoney(initial, { withCurrency: false, hideZeroKopecks: true }),
-  )
-  const [preview, setPreview] = useState<ReturnType<typeof previewOverspend> | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  async function submit(choice?: 'go_negative' | 'recalc_limit') {
-    const amount = parseMoneyInput(raw)
-    if (amount == null || amount < 0) {
-      onError('Укажите сумму расходов')
-      return
-    }
-    setBusy(true)
-    const result = recordExpense(state, today, amount, choice, today)
-    if (!result.ok) {
-      if (result.overspend) {
-        setPreview(result.overspend)
-        setBusy(false)
-        return
-      }
-      onError(result.error)
-      setBusy(false)
-      return
-    }
-    if (result.warning && !window.confirm(result.warning + ' Продолжить?')) {
-      setBusy(false)
-      return
-    }
-    await onChange(result.state)
-    setBusy(false)
-    onClose()
-  }
-
-  return (
-    <Modal title="Расходы за сегодня" onClose={onClose}>
-      {!preview ? (
-        <div className="stack">
-          <Field label="Сколько потратили за день">
-            <input className="input" inputMode="decimal" value={raw} onChange={(e) => setRaw(e.target.value)} autoFocus />
-          </Field>
-          <Button block disabled={busy} onClick={() => submit()}>
-            Сохранить
-          </Button>
-        </div>
-      ) : (
-        <div className="stack">
-          <p>
-            Перерасход сверх лимита и свободных денег: <strong>{formatMoney(preview.overspend)}</strong>
-          </p>
-          <p className="muted">
-            Дней до следующей выплаты после сегодня: {preview.remainingDaysAfter}. Текущий лимит:{' '}
-            {formatMoney(preview.dailyLimit)}.
-          </p>
-          <div className="choice-card">
-            <strong>Уйти в минус</strong>
-            <p>Свободные деньги станут {formatMoney(preview.goNegativeFreeMoney)}. Лимит не изменится.</p>
-            <Button block onClick={() => submit('go_negative')}>
-              Уйти в минус
-            </Button>
-          </div>
-          <div className="choice-card">
-            <strong>Пересчитать дневной лимит</strong>
-            {preview.budgetInsufficient || preview.newLimit == null ? (
-              <p>Оставшегося бюджета недостаточно для неотрицательного лимита. Фиктивные деньги не создаём.</p>
-            ) : (
-              <>
-                <p>Свободные деньги обнулятся. Новый лимит: {formatMoney(preview.newLimit)}.</p>
-                <Button block variant="secondary" onClick={() => submit('recalc_limit')}>
-                  Пересчитать лимит
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </Modal>
-  )
 }
 
 function IncomeModal({
@@ -337,31 +288,47 @@ function IncomeModal({
   }
 
   return (
-    <Modal title={stage === 'form' ? 'Дополнительное поступление' : 'Как распределить'} onClose={onClose}>
+    <Sheet title={stage === 'form' ? 'Дополнительное поступление' : 'Как распределить'} onClose={onClose}>
       {stage === 'form' ? (
-        <div className="stack">
+        <div className="sheet-body">
           <Field label="Сумма">
-            <input className="input" inputMode="decimal" value={amountRaw} onChange={(e) => setAmountRaw(e.target.value)} />
+            <input
+              className="input input-amount"
+              inputMode="decimal"
+              placeholder="0"
+              value={amountRaw}
+              onChange={(event) => setAmountRaw(event.target.value)}
+              autoFocus
+            />
           </Field>
           <Field label="Дата">
-            <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <input className="input" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
           </Field>
           <Field label="Описание (необязательно)">
-            <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <input className="input" value={description} onChange={(event) => setDescription(event.target.value)} />
           </Field>
-          <Button block onClick={createIncome}>
-            Далее
-          </Button>
+          <div className="sheet-actions">
+            <Button block size="lg" onClick={createIncome}>
+              Далее
+            </Button>
+          </div>
         </div>
       ) : (
-        <div className="stack">
-          <p>Поступило {formatMoney(incomeAmount)}</p>
+        <div className="sheet-body">
+          <p className="center secondary">
+            Поступило <strong>{formatMoney(incomeAmount)}</strong>
+          </p>
           <Field label="В накопления">
-            <input className="input" inputMode="decimal" value={savingsRaw} onChange={(e) => setSavingsRaw(e.target.value)} />
+            <input
+              className="input"
+              inputMode="decimal"
+              value={savingsRaw}
+              onChange={(event) => setSavingsRaw(event.target.value)}
+            />
           </Field>
           {derived.accounts.filter((item) => !item.archived).length > 0 ? (
             <Field label="Счёт">
-              <select className="input" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              <select className="input" value={accountId} onChange={(event) => setAccountId(event.target.value)}>
                 {derived.accounts
                   .filter((item) => !item.archived)
                   .map((item) => (
@@ -373,8 +340,34 @@ function IncomeModal({
             </Field>
           ) : null}
           <Field label="В повседневный бюджет">
-            <input className="input" inputMode="decimal" value={budgetRaw} onChange={(e) => setBudgetRaw(e.target.value)} />
+            <input
+              className="input"
+              inputMode="decimal"
+              value={budgetRaw}
+              onChange={(event) => setBudgetRaw(event.target.value)}
+            />
           </Field>
+          <div className="row">
+            <Button
+              variant="soft"
+              onClick={() => {
+                setSavingsRaw('0')
+                setBudgetRaw(formatMoney(incomeAmount, { withCurrency: false, hideZeroKopecks: true }))
+              }}
+            >
+              Всё в бюджет
+            </Button>
+            <Button
+              variant="soft"
+              disabled={derived.accounts.filter((item) => !item.archived).length === 0}
+              onClick={() => {
+                setSavingsRaw(formatMoney(incomeAmount, { withCurrency: false, hideZeroKopecks: true }))
+                setBudgetRaw('0')
+              }}
+            >
+              Всё в накопления
+            </Button>
+          </div>
           {budget > 0 && limitPreview ? (
             <p className="hint-card">
               Текущий лимит {formatMoney(limitPreview.previousLimit)}. На бюджет {formatMoney(budget)}. Дней:{' '}
@@ -384,15 +377,14 @@ function IncomeModal({
           <p className={leftover < 0 ? 'field-error' : 'muted'}>
             Останется нераспределённым: {formatMoney(leftover)}
           </p>
-          <Button
-            block
-            onClick={() => allocate()}
-          >
-            Подтвердить
-          </Button>
+          <div className="sheet-actions">
+            <Button block size="lg" onClick={allocate}>
+              Подтвердить
+            </Button>
+          </div>
         </div>
       )}
-    </Modal>
+    </Sheet>
   )
 }
 
@@ -423,23 +415,31 @@ function PaydayModal({
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
 
   return (
-    <Modal
-      title={pending.kind === 'advance' ? 'Аванс' : 'Зарплата'}
-      onClose={onClose}
-    >
-      <div className="stack">
-        <p className="muted">
+    <Sheet title={pending.kind === 'advance' ? 'Аванс' : 'Зарплата'} onClose={onClose}>
+      <div className="sheet-body">
+        <p className="sheet-text">
           Расчётная сумма {formatMoney(expected)} за {pending.workPeriod}. Свободные деньги сохранятся.
         </p>
         <Field label="Фактическая сумма">
-          <input className="input" inputMode="decimal" value={amountRaw} onChange={(e) => setAmountRaw(e.target.value)} />
+          <input
+            className="input input-amount"
+            inputMode="decimal"
+            value={amountRaw}
+            onChange={(event) => setAmountRaw(event.target.value)}
+            autoFocus
+          />
         </Field>
         <Field label="Отложить в накопления">
-          <input className="input" inputMode="decimal" value={savedRaw} onChange={(e) => setSavedRaw(e.target.value)} />
+          <input
+            className="input"
+            inputMode="decimal"
+            value={savedRaw}
+            onChange={(event) => setSavedRaw(event.target.value)}
+          />
         </Field>
         {accounts.length > 0 ? (
           <Field label="Накопительный счёт">
-            <select className="input" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+            <select className="input" value={accountId} onChange={(event) => setAccountId(event.target.value)}>
               {accounts.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
@@ -448,33 +448,36 @@ function PaydayModal({
             </select>
           </Field>
         ) : null}
-        <Button
-          block
-          onClick={async () => {
-            const amount = parseMoneyInput(amountRaw)
-            const saved = parseMoneyInput(savedRaw || '0')
-            if (!amount || amount <= 0 || saved == null) {
-              onError('Проверьте суммы поступления')
-              return
-            }
-            const result = confirmPayday(state, {
-              date: pending.date,
-              kind: pending.kind,
-              amount,
-              saved,
-              accountId: saved > 0 ? accountId : null,
-            })
-            if (!result.ok) {
-              onError(result.error)
-              return
-            }
-            await onChange(result.state)
-            onClose()
-          }}
-        >
-          Зачислить
-        </Button>
+        <div className="sheet-actions">
+          <Button
+            block
+            size="lg"
+            onClick={async () => {
+              const amount = parseMoneyInput(amountRaw)
+              const saved = parseMoneyInput(savedRaw || '0')
+              if (!amount || amount <= 0 || saved == null) {
+                onError('Проверьте суммы поступления')
+                return
+              }
+              const result = confirmPayday(state, {
+                date: pending.date,
+                kind: pending.kind,
+                amount,
+                saved,
+                accountId: saved > 0 ? accountId : null,
+              })
+              if (!result.ok) {
+                onError(result.error)
+                return
+              }
+              await onChange(result.state)
+              onClose()
+            }}
+          >
+            Зачислить
+          </Button>
+        </div>
       </div>
-    </Modal>
+    </Sheet>
   )
 }

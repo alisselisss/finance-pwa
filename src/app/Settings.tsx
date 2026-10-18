@@ -6,8 +6,22 @@ import { formatMoney, parseMoneyInput } from '../domain/money'
 import { netFromGross } from '../domain/salary'
 import { APP_VERSION, SCHEMA_VERSION } from '../domain/types'
 import type { AppState, DerivedState, SavingsMode, Settings } from '../domain/types'
-import { Button, ErrorBanner, Field, MoneyField, Screen } from './components'
+import {
+  Banner,
+  Button,
+  Card,
+  ConfirmDialog,
+  ErrorBanner,
+  Field,
+  MoneyField,
+  Screen,
+  SegmentedControl,
+} from './components'
+import { DownloadIcon, MonitorIcon, MoonIcon, SunIcon, UploadIcon } from './icons'
 import { navigate } from './router'
+import type { ThemePreference, useTheme } from './theme'
+
+type Theme = ReturnType<typeof useTheme>
 
 function moneyText(value: number | undefined): string {
   if (value == null) return ''
@@ -19,11 +33,13 @@ export function SettingsScreen({
   derived,
   today,
   onChange,
+  theme,
 }: {
   state: AppState
   derived: DerivedState
   today: string
   onChange: (next: AppState) => Promise<void>
+  theme: Theme
 }) {
   const settings = state.settings!
   const [error, setError] = useState<string | null>(null)
@@ -34,6 +50,8 @@ export function SettingsScreen({
   const [ndflPercent, setNdflPercent] = useState(String(settings.ndflBps / 100))
   const [mode, setMode] = useState<SavingsMode>(settings.savingsMode)
   const [fixed, setFixed] = useState(moneyText(settings.fixedSavingsAmount))
+  const [recalcConfirm, setRecalcConfirm] = useState<Partial<Settings> | null>(null)
+  const [importConfirm, setImportConfirm] = useState<{ raw: string; summary: string; incoming: AppState } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const netPreview = (() => {
@@ -43,31 +61,23 @@ export function SettingsScreen({
     return netFromGross(parsed, Math.round(percent * 100))
   })()
 
-  async function save() {
-    setError(null)
-    setInfo(null)
+  function buildPatch(): Partial<Settings> | string {
     const grossSalary = parseMoneyInput(gross)
     const advance = Number(advanceDay)
     const salary = Number(salaryDay)
     const percent = Number(ndflPercent.replace(',', '.'))
     const fixedAmount = parseMoneyInput(fixed || '0')
-    if (!grossSalary || grossSalary <= 0) {
-      setError('Укажите месячный оклад до налога')
-      return
-    }
+    if (!grossSalary || grossSalary <= 0) return 'Укажите месячный оклад до налога'
     if (!Number.isInteger(advance) || !Number.isInteger(salary) || advance < 1 || advance > 31 || salary < 1 || salary > 31) {
-      setError('Дни выплат — целые числа от 1 до 31')
-      return
+      return 'Дни выплат — целые числа от 1 до 31'
     }
     if (!Number.isFinite(percent) || percent < 0 || percent > 50) {
-      setError('Ставка НДФЛ — от 0 до 50 процентов')
-      return
+      return 'Ставка НДФЛ — от 0 до 50 процентов'
     }
     if (fixedAmount == null || fixedAmount < 0) {
-      setError('Укажите неотрицательную сумму откладывания')
-      return
+      return 'Укажите неотрицательную сумму откладывания'
     }
-    const patch: Partial<Settings> = {
+    return {
       grossSalary,
       advanceDay: advance,
       salaryDay: salary,
@@ -75,11 +85,15 @@ export function SettingsScreen({
       savingsMode: mode,
       fixedSavingsAmount: mode === 'fixed' ? fixedAmount : 0,
     }
-    let result = updateSettings(state, patch, today, false)
+  }
+
+  async function save(patch: Partial<Settings>, confirmed: boolean) {
+    setError(null)
+    setInfo(null)
+    const result = updateSettings(state, patch, today, confirmed)
     if (!result.ok && result.error.endsWith('Подтвердить?')) {
-      const accepted = window.confirm(`${result.error.replace(' Подтвердить?', '')}\n\nПрименить изменение?`)
-      if (!accepted) return
-      result = updateSettings(state, patch, today, true)
+      setRecalcConfirm(patch)
+      return
     }
     if (!result.ok) {
       setError(result.error)
@@ -113,49 +127,71 @@ export function SettingsScreen({
       return
     }
     const incoming = parsed.backup.state
-    const eventsCount = incoming.events.length
-    const confirmed = window.confirm(
-      `Резервная копия от ${parsed.backup.exportedAt.slice(0, 10)}: ${eventsCount} операций, ` +
-        `оклад ${formatMoney(incoming.settings?.grossSalary ?? 0)}.\n\n` +
-        'Текущие данные будут полностью заменены. Продолжить?',
-    )
-    if (!confirmed) return
-    await onChange(incoming)
-    setInfo('Данные восстановлены из резервной копии.')
-    navigate({ name: 'home' })
+    const summary =
+      `Резервная копия от ${parsed.backup.exportedAt.slice(0, 10)}: ${incoming.events.length} операций, ` +
+      `оклад ${formatMoney(incoming.settings?.grossSalary ?? 0)}.`
+    setImportConfirm({ raw, summary, incoming })
   }
 
   return (
-    <Screen title="Настройки" onBack={() => navigate({ name: 'home' })}>
+    <Screen title="Настройки">
       {error ? <ErrorBanner text={error} /> : null}
-      {info ? <p className="banner banner-ok">{info}</p> : null}
+      {info ? <Banner tone="ok">{info}</Banner> : null}
 
-      <h2 className="section-title">Зарплата</h2>
-      <div className="stack">
-        <MoneyField label="Месячный оклад до налога" value={parseMoneyInput(gross) ?? undefined} onChange={(v) => setGross(v == null ? '' : moneyText(v))} hint="По умолчанию НДФЛ 13%" />
+      <Card title="Оформление">
+        <SegmentedControl<ThemePreference>
+          ariaLabel="Тема оформления"
+          value={theme.pref}
+          onChange={(value) => theme.setPref(value)}
+          options={[
+            { value: 'system', label: 'Системная', icon: <MonitorIcon size={16} /> },
+            { value: 'light', label: 'Светлая', icon: <SunIcon size={16} /> },
+            { value: 'dark', label: 'Тёмная', icon: <MoonIcon size={16} /> },
+          ]}
+        />
+      </Card>
+
+      <Card title="Зарплата" hint="Оклад и даты влияют только на прогноз выплат. Подтверждённые поступления не меняются.">
+        <MoneyField
+          label="Месячный оклад до налога"
+          value={parseMoneyInput(gross) ?? undefined}
+          onChange={(v) => setGross(v == null ? '' : moneyText(v))}
+          hint="По умолчанию НДФЛ 13%"
+        />
         {netPreview != null ? (
           <p className="hint-card">
             На руки после налога: <strong>{formatMoney(netPreview)}</strong>
           </p>
         ) : null}
         <Field label="Ставка НДФЛ, %">
-          <input className="input" inputMode="decimal" value={ndflPercent} onChange={(e) => setNdflPercent(e.target.value)} />
+          <input
+            className="input"
+            inputMode="decimal"
+            value={ndflPercent}
+            onChange={(event) => setNdflPercent(event.target.value)}
+          />
         </Field>
         <div className="row">
           <Field label="День аванса">
-            <input className="input" inputMode="numeric" value={advanceDay} onChange={(e) => setAdvanceDay(e.target.value)} />
+            <input
+              className="input"
+              inputMode="numeric"
+              value={advanceDay}
+              onChange={(event) => setAdvanceDay(event.target.value)}
+            />
           </Field>
           <Field label="День зарплаты">
-            <input className="input" inputMode="numeric" value={salaryDay} onChange={(e) => setSalaryDay(e.target.value)} />
+            <input
+              className="input"
+              inputMode="numeric"
+              value={salaryDay}
+              onChange={(event) => setSalaryDay(event.target.value)}
+            />
           </Field>
         </div>
-        <p className="muted">
-          Оклад и даты влияют только на прогноз будущих выплат. Уже подтверждённые поступления не меняются.
-        </p>
-      </div>
+      </Card>
 
-      <h2 className="section-title">Накопления</h2>
-      <div className="stack">
+      <Card title="Накопления">
         <label className="choice">
           <input type="radio" name="mode" checked={mode === 'fixed'} onChange={() => setMode('fixed')} />
           <span>
@@ -164,7 +200,11 @@ export function SettingsScreen({
           </span>
         </label>
         {mode === 'fixed' ? (
-          <MoneyField label="Сумма к откладыванию с каждой выплаты" value={parseMoneyInput(fixed || '0') ?? 0} onChange={(v) => setFixed(moneyText(v ?? 0))} />
+          <MoneyField
+            label="Сумма к откладыванию с каждой выплаты"
+            value={parseMoneyInput(fixed || '0') ?? 0}
+            onChange={(v) => setFixed(moneyText(v ?? 0))}
+          />
         ) : null}
         <label className="choice">
           <input type="radio" name="mode" checked={mode === 'variable'} onChange={() => setMode('variable')} />
@@ -173,22 +213,14 @@ export function SettingsScreen({
             <em>Спрашивать сумму и счёт при каждом поступлении</em>
           </span>
         </label>
-        <Button
-          variant="secondary"
-          block
-          onClick={() => navigate({ name: 'savings' })}
-        >
+        <Button variant="secondary" block onClick={() => navigate({ name: 'savings' })}>
           Управлять накопительными счетами
         </Button>
-      </div>
+      </Card>
 
-      <h2 className="section-title">Данные</h2>
-      <div className="stack">
-        <p className="muted">
-          Все данные хранятся только на этом устройстве. Регулярно создавайте резервную копию.
-        </p>
-        <Button variant="secondary" block onClick={exportBackupFile}>
-          Экспортировать резервную копию
+      <Card title="Данные" hint="Все данные хранятся только на этом устройстве. Регулярно создавайте резервную копию.">
+        <Button variant="secondary" block icon={<DownloadIcon size={18} />} onClick={exportBackupFile}>
+          Экспортировать копию
         </Button>
         <input
           ref={fileRef}
@@ -201,35 +233,73 @@ export function SettingsScreen({
             event.target.value = ''
           }}
         />
-        <Button
-          variant="secondary"
-          block
-          onClick={() => fileRef.current?.click()}
-        >
-          Импортировать резервную копию
+        <Button variant="secondary" block icon={<UploadIcon size={18} />} onClick={() => fileRef.current?.click()}>
+          Импортировать копию
         </Button>
-      </div>
+      </Card>
 
-      <h2 className="section-title">О приложении</h2>
-      <div className="stack">
-        <p className="muted">
-          Версия {APP_VERSION} · формат данных {SCHEMA_VERSION}
-        </p>
-        <p className="muted">
-          Учёт ведётся с{' '}
-          {(() => {
-            const start = state.trackingStartDate ? parseISODate(state.trackingStartDate) : null
-            return start ? formatDateLong(start) : '—'
-          })()}
-          . Дневной лимит: {formatMoney(derived.dailyLimit)}
-        </p>
-      </div>
+      <Card title="О приложении">
+        <div className="settings-row">
+          <span className="settings-row-hint">Версия</span>
+          <span className="settings-row-title">
+            {APP_VERSION} · формат данных {SCHEMA_VERSION}
+          </span>
+        </div>
+        <div className="settings-row">
+          <span className="settings-row-hint">Учёт ведётся с</span>
+          <span className="settings-row-title">
+            {(() => {
+              const start = state.trackingStartDate ? parseISODate(state.trackingStartDate) : null
+              return start ? formatDateLong(start) : '—'
+            })()}
+          </span>
+        </div>
+        <div className="settings-row">
+          <span className="settings-row-hint">Текущий дневной лимит</span>
+          <span className="settings-row-title">{formatMoney(derived.dailyLimit)}</span>
+        </div>
+      </Card>
 
-      <div className="stack save-row">
-        <Button block onClick={save}>
-          Сохранить настройки
-        </Button>
-      </div>
+      <Button block size="lg" onClick={() => {
+        const patch = buildPatch()
+        if (typeof patch === 'string') {
+          setError(patch)
+          return
+        }
+        void save(patch, false)
+      }}>
+        Сохранить настройки
+      </Button>
+
+      {recalcConfirm ? (
+        <ConfirmDialog
+          title="Изменение пересчитает лимит"
+          text="Новые даты или оклад меняют график будущих выплат, поэтому дневной лимит текущего периода нужно пересчитать по оставшимся дням. Применить изменение?"
+          confirmLabel="Применить"
+          onResolve={async (ok) => {
+            const patch = recalcConfirm
+            setRecalcConfirm(null)
+            if (ok && patch) await save(patch, true)
+          }}
+        />
+      ) : null}
+
+      {importConfirm ? (
+        <ConfirmDialog
+          title="Восстановить из копии?"
+          text={`${importConfirm.summary} Текущие данные будут полностью заменены.`}
+          confirmLabel="Восстановить"
+          tone="danger"
+          onResolve={async (ok) => {
+            const pendingImport = importConfirm
+            setImportConfirm(null)
+            if (!ok || !pendingImport) return
+            await onChange(pendingImport.incoming)
+            setInfo('Данные восстановлены из резервной копии.')
+            navigate({ name: 'home' })
+          }}
+        />
+      ) : null}
     </Screen>
   )
 }

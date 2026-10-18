@@ -1,9 +1,28 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { formatDateLong, parseISODate } from '../domain/dates'
 import { journal, recordExpense } from '../domain/engine'
 import { formatMoney, parseMoneyInput } from '../domain/money'
-import type { AppState, FinanceEvent } from '../domain/types'
-import { Button, Empty, ErrorBanner, Field, Screen } from './components'
+import type { AppState, FinanceEvent, OverspendPreview } from '../domain/types'
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  Empty,
+  ErrorBanner,
+  Field,
+  ListRow,
+  Screen,
+} from './components'
+import { OverspendOptions } from './ExpenseSheet'
+import {
+  BanknoteIcon,
+  CoinsIcon,
+  HistoryIcon,
+  ReceiptIcon,
+  RefreshIcon,
+  SettingsIcon,
+  WalletIcon,
+} from './icons'
 import { navigate } from './router'
 
 const LABELS: Record<string, string> = {
@@ -17,6 +36,40 @@ const LABELS: Record<string, string> = {
   account_renamed: 'Счёт переименован',
   account_archived: 'Счёт удалён',
   settings_changed: 'Изменены настройки',
+}
+
+/**
+ * Семантика операции по её типу (а не по знаку числа): поступления
+ * и пополнения подсвечиваются тёплым зелёным, расходы остаются нейтральными.
+ */
+function eventIsIncome(event: FinanceEvent): boolean {
+  return (
+    event.type === 'period_started' ||
+    event.type === 'extra_income' ||
+    event.type === 'extra_allocation'
+  )
+}
+
+function eventIcon(event: FinanceEvent): ReactNode {
+  switch (event.type) {
+    case 'period_started':
+      return <BanknoteIcon size={20} />
+    case 'extra_income':
+      return <CoinsIcon size={20} />
+    case 'extra_allocation':
+    case 'account_created':
+    case 'account_renamed':
+    case 'account_archived':
+      return <WalletIcon size={20} />
+    case 'daily_expense':
+      return <ReceiptIcon size={20} />
+    case 'limit_recalc':
+      return <RefreshIcon size={20} />
+    case 'settings_changed':
+      return <SettingsIcon size={20} />
+    default:
+      return <HistoryIcon size={20} />
+  }
 }
 
 export function History({
@@ -42,38 +95,39 @@ export function History({
   const selected = items.find((event) => event.id === eventId) ?? state.events.find((event) => event.id === eventId)
 
   if (selected) {
-    return (
-      <EventDetail
-        state={state}
-        event={selected}
-        today={today}
-        onChange={onChange}
-      />
-    )
+    return <EventDetail state={state} event={selected} today={today} onChange={onChange} />
   }
 
   return (
-    <Screen title="История" onBack={() => navigate({ name: 'home' })}>
+    <Screen title="История">
       <div className="row">
         <Field label="С">
-          <input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <input className="input" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
         </Field>
         <Field label="По">
-          <input className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <input className="input" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
         </Field>
       </div>
       {items.length === 0 ? (
-        <Empty title="Операций нет" text="Запишите расходы или поступление, и они появятся здесь." />
+        <Empty
+          icon={<HistoryIcon size={22} />}
+          title="Операций нет"
+          text="Запишите расходы или поступление, и они появятся здесь."
+        />
       ) : (
         <ul className="journal">
           {items.map((event) => (
-            <li key={event.id}>
-              <button type="button" className="linkish" onClick={() => navigate({ name: 'history', eventId: event.id })}>
-                <strong>{eventLabel(event)}</strong>
-                <div className="muted">{formatDateLong(parseISODate(event.date)!)}</div>
-              </button>
-              <span>{eventAmount(event)}</span>
-            </li>
+            <ListRow
+              key={event.id}
+              leading={eventIcon(event)}
+              title={eventLabel(event)}
+              subtitle={formatDateLong(parseISODate(event.date)!)}
+              trailing={eventAmount(event)}
+              income={eventIsIncome(event)}
+              chevron
+              onClick={() => navigate({ name: 'history', eventId: event.id })}
+              ariaLabel={`Открыть операцию: ${eventLabel(event)}`}
+            />
           ))}
         </ul>
       )}
@@ -98,73 +152,106 @@ function EventDetail({
       ? formatMoney(Number(event.payload.amount), { withCurrency: false, hideZeroKopecks: true })
       : '',
   )
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [overspend, setOverspend] = useState<OverspendPreview | null>(null)
+
+  const details = detailRows(event)
+
+  async function applyEdit(amount: number, choice?: 'go_negative' | 'recalc_limit') {
+    setError(null)
+    const result = recordExpense(state, event.date, amount, choice, today)
+    if (!result.ok) {
+      if (result.overspend) {
+        setOverspend(result.overspend)
+        return
+      }
+      setError(result.error)
+      return
+    }
+    await onChange(result.state)
+    navigate({ name: 'history' })
+  }
 
   return (
     <Screen title="Операция" onBack={() => navigate({ name: 'history' })}>
-      <p>
-        <strong>{eventLabel(event)}</strong>
-      </p>
-      <p className="muted">{formatDateLong(parseISODate(event.date)!)}</p>
-      <p>{event.description}</p>
-      <pre className="payload">{detailText(event)}</pre>
+      {error ? <ErrorBanner text={error} /> : null}
+
+      <Card>
+        <div className={`row-leading${eventIsIncome(event) ? ' is-income' : ''}`} style={{ width: 46, height: 46 }}>
+          {eventIcon(event)}
+        </div>
+        <h2 className="card-title">{eventLabel(event)}</h2>
+        <p className="card-hint">{formatDateLong(parseISODate(event.date)!)}</p>
+        {eventAmount(event) ? (
+          <span className={`detail-amount${eventIsIncome(event) ? ' is-income' : ''}`}>
+            {eventAmount(event)}
+          </span>
+        ) : null}
+        {event.description ? <p className="secondary">{event.description}</p> : null}
+        {details.map(([label, value]) => (
+          <div className="settings-row" key={label}>
+            <span className="settings-row-hint">{label}</span>
+            <span className="settings-row-title">{value}</span>
+          </div>
+        ))}
+      </Card>
+
       {event.type === 'daily_expense' ? (
-        <div className="stack">
-          <Field label="Исправить сумму расходов">
-            <input className="input" inputMode="decimal" value={raw} onChange={(e) => setRaw(e.target.value)} />
+        <Card title="Исправление расходов">
+          <Field label="Сумма расходов за этот день">
+            <input
+              className="input input-amount"
+              inputMode="decimal"
+              value={raw}
+              onChange={(event) => setRaw(event.target.value)}
+            />
           </Field>
-          {error ? <ErrorBanner text={error} /> : null}
-          <Button
-            block
-            onClick={async () => {
-              const amount = parseMoneyInput(raw)
-              if (amount == null || amount < 0) {
-                setError('Некорректная сумма')
-                return
-              }
-              if (
-                !window.confirm(
-                  'Изменение прошлых расходов пересчитает свободные деньги за последующие дни. Зафиксированные лимиты не изменятся. Продолжить?',
-                )
-              ) {
-                return
-              }
-              const result = recordExpense(state, event.date, amount, undefined, today)
-              if (!result.ok) {
-                if (result.overspend) {
-                  const go = window.confirm(
-                    `Перерасход ${formatMoney(result.overspend.overspend)}. Уйти в минус по свободным деньгам? Нажмите «Отмена», чтобы пересчитать лимит.`,
-                  )
-                  const retry = recordExpense(
-                    state,
-                    event.date,
-                    amount,
-                    go ? 'go_negative' : 'recalc_limit',
-                    today,
-                  )
-                  if (!retry.ok) {
-                    setError(retry.error)
-                    return
-                  }
-                  await onChange(retry.state)
-                  navigate({ name: 'history' })
+          <p className="field-hint">
+            Изменение прошлых расходов пересчитает свободные деньги за последующие дни. Зафиксированные лимиты не
+            изменятся.
+          </p>
+          {overspend ? (
+            <OverspendOptions preview={overspend} onChoose={(choice) => void applyEdit(parseMoneyInput(raw)!, choice)} />
+          ) : (
+            <Button
+              block
+              onClick={() => {
+                const amount = parseMoneyInput(raw)
+                if (amount == null || amount < 0) {
+                  setError('Некорректная сумма')
                   return
                 }
-                setError(result.error)
-                return
-              }
-              await onChange(result.state)
-              navigate({ name: 'history' })
-            }}
-          >
-            Сохранить изменение
-          </Button>
-        </div>
+                setConfirmOpen(true)
+              }}
+            >
+              Сохранить изменение
+            </Button>
+          )}
+        </Card>
       ) : (
         <p className="muted">
           Удаление связанных операций ограничено, чтобы не потерять согласованность балансов. Для коррекции
           расходов используйте правку дневной записи.
         </p>
       )}
+
+      {confirmOpen ? (
+        <ConfirmDialog
+          title="Изменить расходы?"
+          text="Свободные деньги за последующие дни будут пересчитаны. Зафиксированные лимиты не изменятся."
+          confirmLabel="Изменить"
+          onResolve={async (ok) => {
+            setConfirmOpen(false)
+            if (!ok) return
+            const amount = parseMoneyInput(raw)
+            if (amount == null || amount < 0) {
+              setError('Некорректная сумма')
+              return
+            }
+            await applyEdit(amount)
+          }}
+        />
+      ) : null}
     </Screen>
   )
 }
@@ -188,22 +275,30 @@ function eventAmount(event: FinanceEvent): string {
   return ''
 }
 
-function detailText(event: FinanceEvent): string {
+function detailRows(event: FinanceEvent): [string, string][] {
   if (event.type === 'period_started') {
-    return `Сумма: ${formatMoney(Number(event.payload.amount))}\nОтложено: ${formatMoney(Number(event.payload.saved ?? 0))}\nПериод: ${String(event.payload.workPeriod ?? '')}`
+    return [
+      ['Сумма', formatMoney(Number(event.payload.amount))],
+      ['Отложено', formatMoney(Number(event.payload.saved ?? 0))],
+      ['Период', String(event.payload.workPeriod ?? '')],
+    ]
   }
   if (event.type === 'extra_allocation') {
     const savings = (event.payload.savings as { amount: number }[]) ?? []
     const toSavings = savings.reduce((sum, part) => sum + part.amount, 0)
-    return `В накопления: ${formatMoney(toSavings)}\nВ бюджет: ${formatMoney(Number(event.payload.budgetAmount ?? 0))}`
+    return [
+      ['В накопления', formatMoney(toSavings)],
+      ['В бюджет', formatMoney(Number(event.payload.budgetAmount ?? 0))],
+    ]
   }
   if (event.type === 'daily_expense') {
     const overspend = event.payload.overspend as { choice?: string; newLimit?: number } | undefined
-    return `Сумма: ${formatMoney(Number(event.payload.amount))}${
-      overspend?.choice === 'recalc_limit' && overspend.newLimit != null
-        ? `\nНовый лимит: ${formatMoney(overspend.newLimit)}`
-        : ''
-    }`
+    const rows: [string, string][] = [['Сумма', formatMoney(Number(event.payload.amount))]]
+    if (overspend?.choice === 'recalc_limit' && overspend.newLimit != null) {
+      rows.push(['Новый лимит', formatMoney(overspend.newLimit)])
+    }
+    return rows
   }
-  return eventAmount(event)
+  const amount = eventAmount(event)
+  return amount ? [['Сумма', amount]] : []
 }

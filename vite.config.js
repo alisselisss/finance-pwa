@@ -16,8 +16,8 @@ export default defineConfig({
         // Относительные пути: корректны и на GitHub Pages (/repo/), и на localhost
         start_url: './',
         scope: './',
-        theme_color: '#0f9d76',
-        background_color: '#f6f7f9',
+        theme_color: '#111214',
+        background_color: '#111214',
         display: 'standalone',
         icons: [
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },

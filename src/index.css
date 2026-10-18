@@ -1,25 +1,82 @@
+/*
+ * Дизайн-токены: концепция Neutral Plum & Peach.
+ * Основа — нейтральный графит; персиковый — главный акцент, сливовый — редкая дополнительная краска.
+ * Тёмная тема — по умолчанию, светлая — через [data-theme='light'];
+ * для системного значения тёмная применяется через prefers-color-scheme.
+ */
+
 :root {
-  --bg: #f4f6f5;
-  --surface: #ffffff;
-  --surface-2: #eef1f0;
-  --text: #18211d;
-  --text-muted: #5f6b66;
-  --border: #dfe4e2;
-  --accent: #0f9d76;
-  --accent-strong: #0b7d5e;
-  --accent-soft: rgba(15, 157, 118, 0.12);
-  --good: #0f9d76;
-  --bad: #d2372e;
-  --warn-bg: #fdf3e2;
-  --warn-border: #edcf9a;
-  --warn-text: #7a5410;
-  --ok-bg: #e8f5ef;
-  --ok-border: #b7dfd0;
-  --ok-text: #0b6b4e;
-  --error-bg: #fdecec;
-  --error-border: #f2b8b5;
-  --error-text: #93251f;
-  --shadow: 0 8px 24px rgba(16, 24, 20, 0.12);
+  color-scheme: dark;
+
+  --bg: #111214;
+  --bg-tint: #151619;
+  --surface: #1b1c20;
+  --surface-2: #222329;
+  --text: #f5f3f2;
+  --text-secondary: #aaa7ac;
+  --text-muted: #7d7b83;
+  --border: #26272c;
+  --border-strong: #303035;
+
+  --accent: #ff927e;
+  --accent-strong: #ffaa99;
+  --accent-text: #ff9d8b;
+  --on-accent: #2a130c;
+  --accent-soft: rgba(255, 146, 126, 0.13);
+  --accent-soft-border: rgba(255, 146, 126, 0.26);
+
+  --plum: #a875c9;
+  --plum-text: #bb92d3;
+  --plum-soft: rgba(168, 117, 201, 0.14);
+
+  /* Тёплый зелёный — только положительные финансовые движения (поступления, пополнения) */
+  --color-financial-positive: #b8e986;
+  --color-financial-positive-strong: #8fcb63;
+  --financial-soft: rgba(184, 233, 134, 0.12);
+
+  --good: var(--color-financial-positive);
+  --good-soft: var(--financial-soft);
+  --bad: #e5484d;
+  --bad-strong: #f0615f;
+  --bad-soft: rgba(229, 72, 77, 0.14);
+
+  --warn-bg: #2a2416;
+  --warn-border: #4e3e1e;
+  --warn-text: #e2c078;
+  --ok-bg: rgba(255, 146, 126, 0.1);
+  --ok-border: rgba(255, 146, 126, 0.24);
+  --ok-text: #ffb4a6;
+  --error-bg: rgba(229, 72, 77, 0.12);
+  --error-border: rgba(229, 72, 77, 0.3);
+  --error-text: #ff8f92;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --shadow-fab: 0 6px 20px rgba(255, 146, 126, 0.28);
+  --scrim: rgba(5, 5, 7, 0.62);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 26px;
+
+  --focus-ring: 0 0 0 3px rgba(255, 146, 126, 0.35);
+  --avatar-luma: 1;
+
+  /* Локальное свечение за главной суммой: зелёное для положительных, коралловое для отрицательных */
+  --glow-positive: radial-gradient(
+    52% 52% at 50% 44%,
+    rgba(184, 233, 134, 0.17) 0%,
+    rgba(143, 203, 99, 0.07) 55%,
+    rgba(17, 18, 20, 0) 78%
+  );
+  --glow-negative: radial-gradient(
+    52% 52% at 50% 44%,
+    rgba(255, 146, 126, 0.16) 0%,
+    rgba(229, 72, 77, 0.08) 55%,
+    rgba(17, 18, 20, 0) 78%
+  );
+  --progress-grad: linear-gradient(90deg, #ff927e, #a875c9);
 
   --font:
     system-ui,
@@ -29,7 +86,6 @@
     'Helvetica Neue',
     sans-serif;
 
-  color-scheme: light dark;
   font-family: var(--font);
   font-size: 16px;
   line-height: 1.45;
@@ -37,32 +93,144 @@
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
   text-rendering: optimizeLegibility;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121714;
-    --surface: #1b211e;
-    --surface-2: #232a26;
-    --text: #e8ede9;
-    --text-muted: #9aa5a0;
-    --border: #2e3631;
-    --accent: #2fbf93;
-    --accent-strong: #4cd3ab;
-    --accent-soft: rgba(47, 191, 147, 0.16);
-    --good: #3ecf9e;
-    --bad: #ef6a5f;
-    --warn-bg: #2d2416;
-    --warn-border: #55431f;
-    --warn-text: #e3c078;
-    --ok-bg: #15291f;
-    --ok-border: #27503c;
-    --ok-text: #7dd8ac;
-    --error-bg: #301a18;
-    --error-border: #5c2b27;
-    --error-text: #ef8f88;
-    --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f6f4f1;
+  --bg-tint: #fbfaf8;
+  --surface: #ffffff;
+  --surface-2: #eceae5;
+  --text: #211e1c;
+  --text-secondary: #57534e;
+  --text-muted: #8b8680;
+  --border: #e7e3dc;
+  --border-strong: #d5d0c7;
+
+  --accent: #ff927e;
+  --accent-strong: #f77f68;
+  --accent-text: #c8553b;
+  --on-accent: #33150d;
+  --accent-soft: #ffe9e2;
+  --accent-soft-border: #ffc9bb;
+
+  --plum: #a875c9;
+  --plum-text: #8a4fb3;
+  --plum-soft: #f3eaf9;
+
+  /* Тёплый зелёный для положительных движений; в светлой теме глубже ради контраста */
+  --color-financial-positive: #427a24;
+  --color-financial-positive-strong: #4f8a30;
+  --financial-soft: #e9f4df;
+
+  --good: var(--color-financial-positive);
+  --good-soft: var(--financial-soft);
+  --bad: #d8362f;
+  --bad-strong: #c02b25;
+  --bad-soft: #fbe7e6;
+
+  --warn-bg: #faf1dd;
+  --warn-border: #ecd4a6;
+  --warn-text: #8a6410;
+  --ok-bg: #ffefe9;
+  --ok-border: #ffc9bb;
+  --ok-text: #b34a33;
+  --error-bg: #fdeaea;
+  --error-border: #f2b6b4;
+  --error-text: #b3261e;
+
+  --shadow-sm: 0 1px 2px rgba(33, 30, 28, 0.06);
+  --shadow-md: 0 12px 40px rgba(33, 30, 28, 0.16);
+  --shadow-fab: 0 6px 20px rgba(200, 85, 59, 0.28);
+  --scrim: rgba(24, 20, 18, 0.45);
+
+  --focus-ring: 0 0 0 3px rgba(200, 85, 59, 0.3);
+  --avatar-luma: 0;
+
+  --glow-positive: radial-gradient(
+    52% 52% at 50% 44%,
+    rgba(143, 203, 99, 0.3) 0%,
+    rgba(184, 233, 134, 0.12) 55%,
+    rgba(246, 244, 241, 0) 78%
+  );
+  --glow-negative: radial-gradient(
+    52% 52% at 50% 44%,
+    rgba(255, 146, 126, 0.28) 0%,
+    rgba(216, 54, 47, 0.1) 55%,
+    rgba(246, 244, 241, 0) 78%
+  );
+  --progress-grad: linear-gradient(90deg, #f2836c, #a875c9);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+
+    --bg: #f6f4f1;
+    --bg-tint: #fbfaf8;
+    --surface: #ffffff;
+    --surface-2: #eceae5;
+    --text: #211e1c;
+    --text-secondary: #57534e;
+    --text-muted: #8b8680;
+    --border: #e7e3dc;
+    --border-strong: #d5d0c7;
+
+    --accent: #ff927e;
+    --accent-strong: #f77f68;
+    --accent-text: #c8553b;
+    --on-accent: #33150d;
+    --accent-soft: #ffe9e2;
+    --accent-soft-border: #ffc9bb;
+
+    --plum: #a875c9;
+    --plum-text: #8a4fb3;
+    --plum-soft: #f3eaf9;
+
+    --color-financial-positive: #427a24;
+    --color-financial-positive-strong: #4f8a30;
+    --financial-soft: #e9f4df;
+
+    --good: var(--color-financial-positive);
+    --good-soft: var(--financial-soft);
+    --bad: #d8362f;
+    --bad-strong: #c02b25;
+    --bad-soft: #fbe7e6;
+
+    --warn-bg: #faf1dd;
+    --warn-border: #ecd4a6;
+    --warn-text: #8a6410;
+    --ok-bg: #ffefe9;
+    --ok-border: #ffc9bb;
+    --ok-text: #b34a33;
+    --error-bg: #fdeaea;
+    --error-border: #f2b6b4;
+    --error-text: #b3261e;
+
+    --shadow-sm: 0 1px 2px rgba(33, 30, 28, 0.06);
+    --shadow-md: 0 12px 40px rgba(33, 30, 28, 0.16);
+    --shadow-fab: 0 6px 20px rgba(200, 85, 59, 0.28);
+    --scrim: rgba(24, 20, 18, 0.45);
+
+    --focus-ring: 0 0 0 3px rgba(200, 85, 59, 0.3);
+    --avatar-luma: 0;
+
+    --glow-positive: radial-gradient(
+      52% 52% at 50% 44%,
+      rgba(143, 203, 99, 0.3) 0%,
+      rgba(184, 233, 134, 0.12) 55%,
+      rgba(246, 244, 241, 0) 78%
+    );
+    --glow-negative: radial-gradient(
+      52% 52% at 50% 44%,
+      rgba(255, 146, 126, 0.28) 0%,
+      rgba(216, 54, 47, 0.1) 55%,
+      rgba(246, 244, 241, 0) 78%
+    );
+    --progress-grad: linear-gradient(90deg, #f2836c, #a875c9);
   }
 }
 
@@ -74,6 +242,7 @@ body {
   margin: 0;
   min-height: 100svh;
   background: var(--bg);
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 #root {
@@ -84,8 +253,9 @@ h1,
 h2,
 h3 {
   margin: 0;
-  font-weight: 600;
+  font-weight: 650;
   line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 p {
@@ -94,4 +264,23 @@ p {
 
 button {
   font-family: inherit;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
