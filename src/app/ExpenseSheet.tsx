@@ -28,10 +28,14 @@ export function ExpenseSheet({
     initial == null ? '' : formatMoney(initial, { withCurrency: false, hideZeroKopecks: true }),
   )
   const [preview, setPreview] = useState<OverspendPreview | null>(null)
-  const [warning, setWarning] = useState<{ text: string; amount: number; choice?: 'go_negative' | 'recalc_limit' } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  /**
+   * Шит работает только с сегодняшним днём, поэтому предупреждение движка
+   * о пересчёте последующих дней сознательно не показываем — частый кейс
+   * добавления трат применяется сразу. Диалог перерасхода остаётся.
+   */
   async function submit(amount: number, choice?: 'go_negative' | 'recalc_limit') {
     setBusy(true)
     setError(null)
@@ -46,50 +50,36 @@ export function ExpenseSheet({
       setBusy(false)
       return
     }
-    if (result.warning && !warning) {
-      setWarning({ text: result.warning, amount, choice })
-      setBusy(false)
-      return
-    }
     await onChange(result.state)
     setBusy(false)
     onClose()
   }
 
-  function start() {
+  function start(mode: 'add' | 'replace') {
     const amount = parseMoneyInput(raw)
     if (amount == null || amount < 0) {
       setError('Укажите сумму расходов — число в рублях')
       return
     }
-    void submit(amount)
+    void submit(mode === 'add' && initial != null ? initial + amount : amount)
   }
+
+  const editing = initial != null
 
   return (
     <Sheet title="Расходы за сегодня" onClose={onClose}>
       <div className="sheet-body">
         {error ? <Banner tone="error">{error}</Banner> : null}
-        {warning ? (
+        {!preview ? (
           <>
-            <Banner tone="warn" icon={<AlertIcon size={20} />}>
-              {warning.text}
-            </Banner>
-            <div className="sheet-actions">
-              <Button
-                block
-                disabled={busy}
-                onClick={() => void submit(warning.amount, warning.choice)}
-              >
-                Продолжить
-              </Button>
-              <Button variant="ghost" block disabled={busy} onClick={onClose}>
-                Отмена
-              </Button>
-            </div>
-          </>
-        ) : !preview ? (
-          <>
-            <Field label="Сколько потратили за день" hint={`Лимит на сегодня: ${formatMoney(dailyLimit)}`}>
+            <Field
+              label={editing ? 'Сколько потратили ещё' : 'Сколько потратили за день'}
+              hint={
+                editing
+                  ? `Записано за сегодня: ${formatMoney(initial)} · лимит ${formatMoney(dailyLimit)}`
+                  : `Лимит на сегодня: ${formatMoney(dailyLimit)}`
+              }
+            >
               <input
                 className="input input-amount"
                 inputMode="decimal"
@@ -100,9 +90,14 @@ export function ExpenseSheet({
               />
             </Field>
             <div className="sheet-actions">
-              <Button block size="lg" disabled={busy} onClick={start}>
-                Сохранить
+              <Button block size="lg" disabled={busy} onClick={() => start(editing ? 'add' : 'replace')}>
+                {editing ? 'Добавить к расходам' : 'Сохранить'}
               </Button>
+              {editing ? (
+                <Button variant="ghost" block disabled={busy} onClick={() => start('replace')}>
+                  Заменить сумму за день
+                </Button>
+              ) : null}
             </div>
           </>
         ) : (

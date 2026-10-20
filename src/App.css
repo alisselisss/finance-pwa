@@ -57,10 +57,9 @@
 
 .home {
   flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto 1fr auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   padding: 4px 0 12px;
   animation: screen-in 0.18s ease-out;
@@ -200,22 +199,24 @@
 /* ---------- Главный экран: свободные деньги в центре ---------- */
 
 /*
- * Зона hero растянута на вторую и третью grid-строки: её высота не зависит
- * от высоты нижней группы, поэтому сумма центрируется во всей доступной
- * области между шапкой и нижней навигацией, а не в остатке под контентом.
+ * Зона центрирования — абсолютный слой с pointer-events:none:
+ * клики всегда проходят сквозь неё к шапке и метрикам.
+ * Нижний отступ зоны поднимает центр блока на 80px вверх — так же,
+ * как выглядел ручной margin-top: -80px, но без перекрытия кнопок шапки.
  */
 .home-center {
-  grid-row: 2 / 4;
-  grid-column: 1;
-  min-height: min-content;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  margin-top: -80px;
+  overflow: hidden;
+  pointer-events: none;
+  padding-bottom: 200px;
 }
 
 .home-secondary {
-  grid-row: 3;
-  grid-column: 1;
+  position: relative;
+  margin-top: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -227,17 +228,15 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  /* центрирует блок в доступной области; смещённый вниз нижний отступ
-     поднимает сумму над центром и держит зазор до списка метрик */
   margin: auto 0;
-  padding: 12px 8px 98px;
+  padding: 12px 8px 24px;
   text-align: center;
 }
 
 /*
  * Низкие экраны: сначала (≤730px) прячем строку-пояснение, чтобы сумма
- * не касалась списка метрик; на самых низких (≤660px) переключаемся на
- * компактную модель — сумма сразу под шапкой, метрики у низа.
+ * не касалась списка метрик; на самых низких (≤660px) возвращаем зону
+ * в поток — сумма сразу под шапкой, метрики у низа, пересечение исключено.
  */
 @media (max-height: 730px) {
   .hero-hint {
@@ -246,17 +245,10 @@
 }
 
 @media (max-height: 660px) {
-  .home {
-    grid-template-rows: auto auto 1fr;
-  }
-
   .home-center {
-    grid-row: 2;
-  }
-
-  .home-secondary {
-    grid-row: 3;
-    align-self: end;
+    position: static;
+    pointer-events: auto;
+    padding-bottom: 0;
   }
 
   .hero {
