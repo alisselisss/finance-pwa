@@ -1,4 +1,4 @@
-import { compareDates, parseISODate, toISODate, type CalendarDate } from './dates'
+import { addDays, compareDates, parseISODate, toISODate, type CalendarDate } from './dates'
 import { createId } from './ids'
 import { formatMoney, isMoney, splitEvenly, type Money, ZERO } from './money'
 import {
@@ -115,8 +115,32 @@ export function derive(state: AppState, asOfIso: string): DerivedState {
 
   const events = orderedEvents(state.events)
 
+  /*
+   * Пропущенные дни: если за день периода нет записи расходов, дневной лимит
+   * этого дня всё равно попадает в свободные деньги (экономия по умолчанию).
+   * Дни закрываются последовательно по мере продвижения по событиям и в конце
+   * до asOf включительно; день с записью закрывается только самой записью,
+   * поэтому лимит каждого дня начисляется ровно один раз.
+   */
+  let closedThrough: CalendarDate | null = null
+  const closeSkippedDays = (endExclusive: CalendarDate) => {
+    if (!currentPeriod) return
+    const start = requireDate(currentPeriod.startDate)
+    const next = requireDate(currentPeriod.nextPayday)
+    let cursor: CalendarDate = closedThrough ? addDays(closedThrough, 1) : start
+    if (compareDates(cursor, start) < 0) cursor = start
+    while (compareDates(cursor, endExclusive) < 0 && compareDates(cursor, next) < 0) {
+      if (expensesByDate[toISODate(cursor)] == null) {
+        freeMoney += dailyLimit
+      }
+      closedThrough = cursor
+      cursor = addDays(cursor, 1)
+    }
+  }
+
   for (const event of events) {
     const date = requireDate(event.date)
+    closeSkippedDays(date)
     switch (event.type) {
       case 'account_created': {
         const accountId = String(event.payload.accountId)
@@ -263,6 +287,13 @@ export function derive(state: AppState, asOfIso: string): DerivedState {
     }
     void asOf
   }
+
+  /*
+   * Досчитываем пропущенные дни до asOf: вчерашние и более ранние дни без
+   * записи закрываются с начислением лимита; сегодняшний день не закрывается
+   * заранее — он будет закрыт самой записью расходов (или полуночью).
+   */
+  closeSkippedDays(asOf)
 
   const remainingDays = currentPeriod
     ? remainingCalendarDays(asOf, requireDate(currentPeriod.nextPayday))

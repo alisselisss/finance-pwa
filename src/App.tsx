@@ -110,7 +110,8 @@ export default function App() {
           state={state}
           today={today}
           dailyLimit={derived.dailyLimit}
-          initial={derived.expensesByDate[today]}
+          expensesByDate={derived.expensesByDate}
+          trackingStartDate={state.trackingStartDate}
           onClose={() => setExpenseOpen(false)}
           onChange={persist}
         />

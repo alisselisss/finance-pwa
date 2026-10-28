@@ -1,45 +1,56 @@
 import { useState } from 'react'
 import { recordExpense } from '../domain/engine'
+import { formatDateShort, parseISODate } from '../domain/dates'
 import { formatMoney, parseMoneyInput } from '../domain/money'
 import type { AppState, OverspendPreview } from '../domain/types'
 import { AlertIcon } from './icons'
 import { Banner, Button, Field, Sheet } from './components'
 
 /**
- * Запись расходов за сегодня. Используется и с главного экрана,
- * и с центральной кнопки в нижней навигации.
+ * Запись и правка расходов за сегодня и за прошлые дни.
+ * Используется с главного экрана и с центральной кнопки навигации.
  */
 export function ExpenseSheet({
   state,
   today,
   dailyLimit,
-  initial,
+  expensesByDate,
+  trackingStartDate,
   onClose,
   onChange,
 }: {
   state: AppState
   today: string
   dailyLimit: number
-  initial?: number
+  expensesByDate: Record<string, number>
+  trackingStartDate: string | null
   onClose: () => void
   onChange: (next: AppState) => Promise<void>
 }) {
-  const [raw, setRaw] = useState(
-    initial == null ? '' : formatMoney(initial, { withCurrency: false, hideZeroKopecks: true }),
-  )
+  const [dateIso, setDateIso] = useState(today)
+  const initial = expensesByDate[dateIso]
+  const editing = initial != null
+  const [raw, setRaw] = useState('')
   const [preview, setPreview] = useState<OverspendPreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  function switchDate(next: string) {
+    setDateIso(next)
+    setRaw('')
+    setPreview(null)
+    setError(null)
+  }
+
   /**
-   * Шит работает только с сегодняшним днём, поэтому предупреждение движка
-   * о пересчёте последующих дней сознательно не показываем — частый кейс
-   * добавления трат применяется сразу. Диалог перерасхода остаётся.
+   * Шит может править уже записанные дни, поэтому предупреждение движка
+   * о пересчёте не показываем — частый кейс добавления трат применяется
+   * сразу. Диалог перерасхода остаётся.
    */
   async function submit(amount: number, choice?: 'go_negative' | 'recalc_limit') {
     setBusy(true)
     setError(null)
-    const result = recordExpense(state, today, amount, choice, today)
+    const result = recordExpense(state, dateIso, amount, choice, today)
     if (!result.ok) {
       if (result.overspend) {
         setPreview(result.overspend)
@@ -64,10 +75,11 @@ export function ExpenseSheet({
     void submit(mode === 'add' && initial != null ? initial + amount : amount)
   }
 
-  const editing = initial != null
+  const title =
+    dateIso === today ? 'Расходы за сегодня' : `Расходы за ${formatDateShort(parseISODate(dateIso)!)}`
 
   return (
-    <Sheet title="Расходы за сегодня" onClose={onClose}>
+    <Sheet title={title} onClose={onClose}>
       <div className="sheet-body">
         {error ? <Banner tone="error">{error}</Banner> : null}
         {!preview ? (
@@ -76,8 +88,8 @@ export function ExpenseSheet({
               label={editing ? 'Сколько потратили ещё' : 'Сколько потратили за день'}
               hint={
                 editing
-                  ? `Записано за сегодня: ${formatMoney(initial)} · лимит ${formatMoney(dailyLimit)}`
-                  : `Лимит на сегодня: ${formatMoney(dailyLimit)}`
+                  ? `Записано за этот день: ${formatMoney(initial)} · лимит ${formatMoney(dailyLimit)}`
+                  : `Лимит на день: ${formatMoney(dailyLimit)}`
               }
             >
               <input
@@ -87,6 +99,16 @@ export function ExpenseSheet({
                 value={raw}
                 onChange={(event) => setRaw(event.target.value)}
                 autoFocus
+              />
+            </Field>
+            <Field label="День" hint={dateIso === today ? 'Сегодня' : 'Прошлый день'}>
+              <input
+                className="input"
+                type="date"
+                value={dateIso}
+                min={trackingStartDate ?? today}
+                max={today}
+                onChange={(event) => switchDate(event.target.value)}
               />
             </Field>
             <div className="sheet-actions">

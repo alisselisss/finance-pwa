@@ -141,6 +141,27 @@ describe('свободные деньги и расходы', () => {
     expect(after.dailyLimit).toBe(preview.newLimit)
     expect(after.dailyLimit).toBeLessThan(before.dailyLimit)
   })
+
+  it('начисляет лимит за прошедшие дни без записи расходов', () => {
+    const state = onboarded()
+    const limit = derive(state, '2026-10-10').dailyLimit
+    // сегодняшний день ещё не закрыт — только стартовые свободные деньги
+    expect(derive(state, '2026-10-10').freeMoney).toBe(5_000_00)
+    // 10-е и 11-е прошли без записей: лимит каждого дня ушёл в свободные
+    expect(derive(state, '2026-10-12').freeMoney).toBe(5_000_00 + limit * 2)
+  })
+
+  it('доводит трату за пропущенный день задним числом без двойного начисления', () => {
+    const state = onboarded()
+    const limit = derive(state, '2026-10-10').dailyLimit
+    expect(derive(state, '2026-10-12').freeMoney).toBe(5_000_00 + limit * 2)
+    // вспомнили вечером 12-го про трату за 11-е
+    const recorded = recordExpense(state, '2026-10-11', limit - 500_00, undefined, '2026-10-12')
+    if (!recorded.ok) throw new Error(recorded.error)
+    const after = derive(recorded.state, '2026-10-12')
+    expect(after.freeMoney).toBe(5_000_00 + limit /* 10-й пропущен */ + 500_00 /* 11-й: лимит минус трата */)
+    expect(after.expensesByDate['2026-10-11']).toBe(limit - 500_00)
+  })
 })
 
 describe('дополнительные поступления и зарплата', () => {
