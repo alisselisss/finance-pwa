@@ -119,8 +119,10 @@ export function derive(state: AppState, asOfIso: string): DerivedState {
    * Пропущенные дни: если за день периода нет записи расходов, дневной лимит
    * этого дня всё равно попадает в свободные деньги (экономия по умолчанию).
    * Дни закрываются последовательно по мере продвижения по событиям и в конце
-   * до asOf включительно; день с записью закрывается только самой записью,
-   * поэтому лимит каждого дня начисляется ровно один раз.
+   * до asOf; день с записью закрывается только самой записью, поэтому лимит
+   * каждого дня начисляется ровно один раз. Экономия не начисляется за дни
+   * до начала пользования приложением (trackingStartDate), даже если период
+   * начался раньше.
    */
   let closedThrough: CalendarDate | null = null
   const closeSkippedDays = (endExclusive: CalendarDate) => {
@@ -129,6 +131,8 @@ export function derive(state: AppState, asOfIso: string): DerivedState {
     const next = requireDate(currentPeriod.nextPayday)
     let cursor: CalendarDate = closedThrough ? addDays(closedThrough, 1) : start
     if (compareDates(cursor, start) < 0) cursor = start
+    const tracked = state.trackingStartDate ? requireDate(state.trackingStartDate) : null
+    if (tracked && compareDates(tracked, cursor) > 0) cursor = tracked
     while (compareDates(cursor, endExclusive) < 0 && compareDates(cursor, next) < 0) {
       if (expensesByDate[toISODate(cursor)] == null) {
         freeMoney += dailyLimit

@@ -162,6 +162,17 @@ describe('свободные деньги и расходы', () => {
     expect(after.freeMoney).toBe(5_000_00 + limit /* 10-й пропущен */ + 500_00 /* 11-й: лимит минус трата */)
     expect(after.expensesByDate['2026-10-11']).toBe(limit - 500_00)
   })
+
+  it('не начисляет экономию за дни до начала пользования приложением', () => {
+    // приложение установили 13-го, последняя выплата была 10-го
+    const started = saveOnboardingDraft(emptyState(), draft())
+    const done = completeOnboarding(started, '2026-10-13')
+    if (!done.ok) throw new Error(done.error)
+    const limit = derive(done.state, '2026-10-13').dailyLimit
+    // дни 10–12 были до установки: лимит за них не начисляется,
+    // экономия идёт только с 13-го (день установки) включительно
+    expect(derive(done.state, '2026-10-15').freeMoney).toBe(5_000_00 + limit * 2)
+  })
 })
 
 describe('дополнительные поступления и зарплата', () => {
