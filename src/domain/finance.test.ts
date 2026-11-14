@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseBackup, serializeBackup } from './backup'
+import { isWorkingDay } from '../data/production-calendar'
 import {
   addDays,
   daysBetween,
@@ -22,10 +23,11 @@ import {
   previewOverspend,
   recordExpense,
   saveOnboardingDraft,
+  setVacationDays,
   updateSettings,
 } from './engine'
 import { formatMoney, parseMoneyInput, roundDiv, splitEvenly } from './money'
-import { calcPaydayAmounts, netFromGross, workingDaysInMonth } from './salary'
+import { calcPaydayAmounts, netFromGross, vacationWorkingDays, workingDaysInMonth } from './salary'
 import type { AppState, OnboardingDraft } from './types'
 
 function draft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft {
@@ -172,6 +174,25 @@ describe('свободные деньги и расходы', () => {
     // дни 10–12 были до установки: лимит за них не начисляется,
     // экономия идёт только с 13-го (день установки) включительно
     expect(derive(done.state, '2026-10-15').freeMoney).toBe(5_000_00 + limit * 2)
+  })
+
+  it('направляет часть поступления напрямую в свободные деньги', () => {
+    const state = onboarded()
+    const before = derive(state, '2026-10-11')
+    const added = addExtraIncome(state, { date: '2026-10-11', amount: 8_000_00 })
+    if (!added.ok || !added.incomeId) throw new Error('income')
+    const allocated = allocateExtraIncome(added.state, {
+      incomeId: added.incomeId,
+      date: '2026-10-11',
+      savings: [],
+      budgetAmount: 3_000_00,
+      freeAmount: 5_000_00,
+    })
+    if (!allocated.ok) throw new Error(allocated.error)
+    const after = derive(allocated.state, '2026-10-11')
+    expect(after.freeMoney).toBe(before.freeMoney + 5_000_00)
+    expect(after.dailyLimit).toBeGreaterThan(before.dailyLimit)
+    expect(after.undistributed).toHaveLength(0)
   })
 })
 
@@ -385,5 +406,50 @@ describe('вспомогательные правила', () => {
 
   it('считает дни периода от выплаты включительно до следующей исключительно', () => {
     expect(daysBetween({ y: 2026, m: 10, d: 10 }, { y: 2026, m: 10, d: 25 })).toBe(15)
+  })
+})
+
+describe('отпуск в расчёте выплат', () => {
+  const GROSS = 100_000_00
+
+  it('уменьшает оплату месяца пропорционально рабочим дням отпуска', () => {
+    const net = netFromGross(GROSS)
+    const wd = workingDaysInMonth(2026, 11)
+    const vac = new Set(['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20'])
+    const vw = vacationWorkingDays(2026, 11, vac)
+    expect(vw.firstHalf).toBe(0)
+    expect(vw.secondHalf).toBeGreaterThan(0)
+    const amounts = calcPaydayAmounts(GROSS, 2026, 11, 1300, vac)
+    const plain = calcPaydayAmounts(GROSS, 2026, 11, 1300)
+    // отпуск во второй половине: аванс не тронут, зарплата уменьшена
+    expect(amounts.advance).toBe(plain.advance)
+    expect(amounts.advance + amounts.salary).toBe(roundDiv(net * (wd.total - vw.secondHalf), wd.total))
+    expect(amounts.salary).toBeLessThan(plain.salary)
+  })
+
+  it('учитывает отпуск первой половины в авансе', () => {
+    const vac = new Set(['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'])
+    const vw = vacationWorkingDays(2026, 11, vac)
+    expect(vw.firstHalf).toBeGreaterThan(0)
+    const amounts = calcPaydayAmounts(GROSS, 2026, 11, 1300, vac)
+    const plain = calcPaydayAmounts(GROSS, 2026, 11, 1300)
+    expect(amounts.advance).toBeLessThan(plain.advance)
+  })
+
+  it('не уменьшает оплату за выходные дни отпуска', () => {
+    const weekend = ['2026-11-01', '2026-11-07', '2026-11-08', '2026-11-14', '2026-11-15', '2026-11-21'].find(
+      (iso) => !isWorkingDay(parseISODate(iso)!),
+    )
+    expect(weekend).toBeTruthy()
+    const amounts = calcPaydayAmounts(GROSS, 2026, 11, 1300, new Set(weekend ? [weekend] : []))
+    const plain = calcPaydayAmounts(GROSS, 2026, 11, 1300)
+    expect(amounts.advance).toBe(plain.advance)
+    expect(amounts.salary).toBe(plain.salary)
+  })
+
+  it('нормализует дни отпуска при сохранении', () => {
+    const state = onboarded()
+    const next = setVacationDays(state, ['2026-11-20', '2026-11-18', '2026-11-20', 'не дата'])
+    expect(next.vacationDays).toEqual(['2026-11-18', '2026-11-20'])
   })
 })

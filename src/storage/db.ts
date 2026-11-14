@@ -43,7 +43,9 @@ function withStore<T>(
 
 export async function loadState(): Promise<AppState> {
   const stored = await withStore<AppState | undefined>('readonly', (store) => store.get(STATE_KEY))
-  return stored ?? emptyState()
+  if (!stored) return emptyState()
+  // Мягкая миграция: у записей до появления отпуска поля vacationDays нет
+  return { ...emptyState(), ...stored, vacationDays: stored.vacationDays ?? [] }
 }
 
 export async function saveState(state: AppState): Promise<void> {

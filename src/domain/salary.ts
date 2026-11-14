@@ -25,6 +25,27 @@ export function workingDaysInMonth(year: number, month: number): {
   return { firstHalf, secondHalf, total: firstHalf + secondHalf }
 }
 
+/**
+ * Рабочие дни отпуска в месяце по половинам: выходные и праздники из
+ * календаря отпуска не уменьшают оплату, учитываются только рабочие дни.
+ */
+export function vacationWorkingDays(
+  year: number,
+  month: number,
+  vacationDays: Set<string>,
+): { firstHalf: number; secondHalf: number } {
+  let firstHalf = 0
+  let secondHalf = 0
+  for (const iso of vacationDays) {
+    if (Number(iso.slice(0, 4)) !== year || Number(iso.slice(5, 7)) !== month) continue
+    const date = { y: year, m: month, d: Number(iso.slice(8, 10)) }
+    if (!isWorkingDay(date)) continue
+    if (date.d <= 15) firstHalf += 1
+    else secondHalf += 1
+  }
+  return { firstHalf, secondHalf }
+}
+
 export type PaydayKind = 'advance' | 'salary'
 
 export function calcPaydayAmounts(
@@ -32,22 +53,33 @@ export function calcPaydayAmounts(
   year: number,
   month: number,
   ndflBps: number = DEFAULT_NDFL_BPS,
+  vacationDays: Set<string> = new Set(),
 ): {
   net: Money
   dayCost: Money
   advance: Money
   salary: Money
   workingDays: ReturnType<typeof workingDaysInMonth>
+  vacationWorking: { firstHalf: number; secondHalf: number }
 } {
   const net = netFromGross(gross, ndflBps)
   const workingDays = workingDaysInMonth(year, month)
+  const vacationWorking = vacationWorkingDays(year, month, vacationDays)
   if (workingDays.total === 0) {
-    return { net, dayCost: 0, advance: 0, salary: net, workingDays }
+    return { net, dayCost: 0, advance: 0, salary: net, workingDays, vacationWorking }
   }
   const dayCost = roundDiv(net, workingDays.total)
-  const advance = roundDiv(net * workingDays.firstHalf, workingDays.total)
-  const salary = net - advance
-  return { net, dayCost, advance, salary, workingDays }
+  // Оплачиваются только фактически отработанные дни; отпускные считаются
+  // отдельно и вносятся как дополнительное поступление
+  const workedFirstHalf = Math.max(workingDays.firstHalf - vacationWorking.firstHalf, 0)
+  const workedTotal = Math.max(
+    workingDays.total - vacationWorking.firstHalf - vacationWorking.secondHalf,
+    0,
+  )
+  const payment = roundDiv(net * workedTotal, workingDays.total)
+  const advance = roundDiv(net * workedFirstHalf, workingDays.total)
+  const salary = payment - advance
+  return { net, dayCost, advance, salary, workingDays, vacationWorking }
 }
 
 export function paydayDateInMonth(

@@ -72,6 +72,32 @@ function eventIcon(event: FinanceEvent): ReactNode {
   }
 }
 
+/**
+ * Итог распределения поступления: сколь ушло в накопления, бюджет и свободные.
+ */
+function allocationOf(state: AppState, incomeId: string): FinanceEvent | null {
+  return state.events.find((event) => event.type === 'extra_allocation' && event.payload.incomeId === incomeId) ?? null
+}
+
+function allocationParts(allocation: FinanceEvent | null): { toSavings: number; toBudget: number; toFree: number } {
+  if (!allocation) return { toSavings: 0, toBudget: 0, toFree: 0 }
+  const savings = (allocation.payload.savings as { amount: number }[]) ?? []
+  return {
+    toSavings: savings.reduce((sum, part) => sum + part.amount, 0),
+    toBudget: Number(allocation.payload.budgetAmount ?? 0),
+    toFree: Number(allocation.payload.freeAmount ?? 0),
+  }
+}
+
+function allocationSummaryText(state: AppState, incomeId: string): string {
+  const { toSavings, toBudget, toFree } = allocationParts(allocationOf(state, incomeId))
+  const parts: string[] = []
+  if (toFree > 0) parts.push(`в свободные ${formatMoney(toFree)}`)
+  if (toBudget > 0) parts.push(`в бюджет ${formatMoney(toBudget)}`)
+  if (toSavings > 0) parts.push(`в накопления ${formatMoney(toSavings)}`)
+  return parts.length > 0 ? parts.join(' · ') : 'не распределено'
+}
+
 export function History({
   state,
   today,
@@ -86,7 +112,12 @@ export function History({
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const items = useMemo(() => {
+    const incomeIds = new Set(
+      state.events.filter((event) => event.type === 'extra_income').map((event) => event.id),
+    )
     return journal(state).filter((event) => {
+      // Распределение показываем внутри строки поступления, а не отдельным действием
+      if (event.type === 'extra_allocation' && incomeIds.has(String(event.payload.incomeId))) return false
       if (from && event.date < from) return false
       if (to && event.date > to) return false
       return true
@@ -121,7 +152,11 @@ export function History({
               key={event.id}
               leading={eventIcon(event)}
               title={eventLabel(event)}
-              subtitle={formatDateLong(parseISODate(event.date)!)}
+              subtitle={
+                event.type === 'extra_income'
+                  ? `${formatDateLong(parseISODate(event.date)!)} · ${allocationSummaryText(state, event.id)}`
+                  : formatDateLong(parseISODate(event.date)!)
+              }
               trailing={eventAmount(event)}
               income={eventIsIncome(event)}
               chevron
@@ -155,7 +190,7 @@ function EventDetail({
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [overspend, setOverspend] = useState<OverspendPreview | null>(null)
 
-  const details = detailRows(event)
+  const details = detailRows(state, event)
 
   async function applyEdit(amount: number, choice?: 'go_negative' | 'recalc_limit') {
     setError(null)
@@ -275,7 +310,7 @@ function eventAmount(event: FinanceEvent): string {
   return ''
 }
 
-function detailRows(event: FinanceEvent): [string, string][] {
+function detailRows(state: AppState, event: FinanceEvent): [string, string][] {
   if (event.type === 'period_started') {
     return [
       ['Сумма', formatMoney(Number(event.payload.amount))],
@@ -283,13 +318,25 @@ function detailRows(event: FinanceEvent): [string, string][] {
       ['Период', String(event.payload.workPeriod ?? '')],
     ]
   }
+  if (event.type === 'extra_income') {
+    const { toSavings, toBudget, toFree } = allocationParts(allocationOf(state, event.id))
+    const rows: [string, string][] = []
+    if (toFree > 0) rows.push(['В свободные деньги', formatMoney(toFree)])
+    if (toBudget > 0) rows.push(['В бюджет', formatMoney(toBudget)])
+    if (toSavings > 0) rows.push(['В накопления', formatMoney(toSavings)])
+    if (rows.length === 0) rows.push(['Распределение', 'не распределено'])
+    return rows
+  }
   if (event.type === 'extra_allocation') {
     const savings = (event.payload.savings as { amount: number }[]) ?? []
     const toSavings = savings.reduce((sum, part) => sum + part.amount, 0)
-    return [
-      ['В накопления', formatMoney(toSavings)],
-      ['В бюджет', formatMoney(Number(event.payload.budgetAmount ?? 0))],
-    ]
+    const toBudget = Number(event.payload.budgetAmount ?? 0)
+    const toFree = Number(event.payload.freeAmount ?? 0)
+    const rows: [string, string][] = []
+    if (toFree > 0) rows.push(['В свободные деньги', formatMoney(toFree)])
+    if (toBudget > 0) rows.push(['В бюджет', formatMoney(toBudget)])
+    if (toSavings > 0) rows.push(['В накопления', formatMoney(toSavings)])
+    return rows
   }
   if (event.type === 'daily_expense') {
     const overspend = event.payload.overspend as { choice?: string; newLimit?: number } | undefined

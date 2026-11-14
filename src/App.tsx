@@ -64,7 +64,9 @@ export default function App() {
         )
         break
       case 'forecast':
-        screen = <Forecast settings={state.settings!} derived={derived} today={today} />
+        screen = (
+          <Forecast state={state} derived={derived} today={today} onChange={persist} />
+        )
         break
       case 'history':
         screen = (

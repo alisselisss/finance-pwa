@@ -707,6 +707,17 @@ button.stat-row {
   gap: 12px;
 }
 
+.chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chips-row .btn {
+  flex: 1 1 auto;
+  min-width: 118px;
+}
+
 .field {
   display: flex;
   flex-direction: column;

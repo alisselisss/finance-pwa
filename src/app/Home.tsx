@@ -53,7 +53,13 @@ export function Home({
   const todayExpense = derived.expensesByDate[today]
   const nextForecast = useMemo(() => {
     if (!state.settings) return null
-    const items = buildForecast(state.settings, parseISODate(today)!, derived.confirmedPeriodKeys, 4)
+    const items = buildForecast(
+      state.settings,
+      parseISODate(today)!,
+      derived.confirmedPeriodKeys,
+      4,
+      state.vacationDays,
+    )
     return items.find((item) => !item.confirmed) ?? null
   }, [state.settings, today, derived.confirmedPeriodKeys])
 
@@ -213,7 +219,7 @@ export function Home({
         <PaydayModal
           state={state}
           pending={pending}
-          expected={expectedSalaryAmount(state.settings, pending.date, pending.kind)}
+          expected={expectedSalaryAmount(state.settings, pending.date, pending.kind, state.vacationDays)}
           onClose={() => setPayOpen(false)}
           onChange={onChange}
           onError={setError}
@@ -325,12 +331,15 @@ function IncomeModal({
   const [incomeAmount, setIncomeAmount] = useState(0)
   const [savingsRaw, setSavingsRaw] = useState('0')
   const [budgetRaw, setBudgetRaw] = useState('0')
+  const [freeRaw, setFreeRaw] = useState('0')
   const [accountId, setAccountId] = useState(derived.accounts.filter((a) => !a.archived)[0]?.id ?? '')
 
   const savings = parseMoneyInput(savingsRaw || '0') ?? 0
   const budget = parseMoneyInput(budgetRaw || '0') ?? 0
-  const leftover = incomeAmount - savings - budget
+  const free = parseMoneyInput(freeRaw || '0') ?? 0
+  const leftover = incomeAmount - savings - budget - free
   const limitPreview = previewBudgetIncrease(state, date, budget)
+  const incomeText = formatMoney(incomeAmount, { withCurrency: false, hideZeroKopecks: true })
 
   function goToSplit() {
     const amount = parseMoneyInput(amountRaw)
@@ -348,7 +357,7 @@ function IncomeModal({
    * закрытие шита ничего не добавляет в учёт.
    */
   async function allocate() {
-    const total = savings + budget
+    const total = savings + budget + free
     if (total > incomeAmount) {
       onError('Нельзя распределить больше, чем поступило')
       return
@@ -371,6 +380,7 @@ function IncomeModal({
       date,
       savings: savings > 0 ? [{ accountId, amount: savings }] : [],
       budgetAmount: budget,
+      freeAmount: free,
     })
     if (!result.ok) {
       onError(result.error)
@@ -411,6 +421,14 @@ function IncomeModal({
           <p className="center secondary">
             Поступило <strong>{formatMoney(incomeAmount)}</strong>
           </p>
+          <Field label="В свободные деньги" hint="Сразу к сумме на главном экране, лимит не меняется">
+            <input
+              className="input"
+              inputMode="decimal"
+              value={freeRaw}
+              onChange={(event) => setFreeRaw(event.target.value)}
+            />
+          </Field>
           <Field label="В накопления">
             <input
               className="input"
@@ -440,21 +458,36 @@ function IncomeModal({
               onChange={(event) => setBudgetRaw(event.target.value)}
             />
           </Field>
-          <div className="row">
+          <div className="chips-row">
             <Button
+              size="sm"
               variant="soft"
               onClick={() => {
+                setFreeRaw(incomeText)
                 setSavingsRaw('0')
-                setBudgetRaw(formatMoney(incomeAmount, { withCurrency: false, hideZeroKopecks: true }))
+                setBudgetRaw('0')
+              }}
+            >
+              Всё в свободные
+            </Button>
+            <Button
+              size="sm"
+              variant="soft"
+              onClick={() => {
+                setFreeRaw('0')
+                setSavingsRaw('0')
+                setBudgetRaw(incomeText)
               }}
             >
               Всё в бюджет
             </Button>
             <Button
+              size="sm"
               variant="soft"
               disabled={derived.accounts.filter((item) => !item.archived).length === 0}
               onClick={() => {
-                setSavingsRaw(formatMoney(incomeAmount, { withCurrency: false, hideZeroKopecks: true }))
+                setFreeRaw('0')
+                setSavingsRaw(incomeText)
                 setBudgetRaw('0')
               }}
             >
@@ -470,7 +503,7 @@ function IncomeModal({
           <p className={leftover < 0 ? 'field-error' : 'muted'}>
             {leftover > 0
               ? `Не будет записано: ${formatMoney(leftover)} — в учёт попадёт только распределённая часть`
-              : `В учёт будет записано: ${formatMoney(savings + budget)}`}
+              : `В учёт будет записано: ${formatMoney(savings + budget + free)}`}
           </p>
           <div className="sheet-actions">
             <Button block size="lg" onClick={allocate}>

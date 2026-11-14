@@ -18,7 +18,9 @@ export function buildForecast(
   from: CalendarDate,
   confirmedKeys: string[],
   monthsAhead = 6,
+  vacationDays: string[] = [],
 ): PaydayForecast[] {
+  const vacation = new Set(vacationDays)
   const items: PaydayForecast[] = []
   const fromIso = toISODate(from)
   for (let i = 0; i < monthsAhead + 1; i += 1) {
@@ -38,9 +40,11 @@ export function buildForecast(
       // месяца (например, аванс 10 января, выплаченный 30 декабря)
       // не меняет оплачиваемый период
       const work = workMonthForPayday(scheduled, kind, settings.salaryDay)
-      const amounts = calcPaydayAmounts(settings.grossSalary, work.year, work.month, settings.ndflBps)
+      const amounts = calcPaydayAmounts(settings.grossSalary, work.year, work.month, settings.ndflBps, vacation)
       const key = periodKey(kind, work.year, work.month)
       const scheduledIso = toISODate(scheduled)
+      const vacationWorking =
+        kind === 'advance' ? amounts.vacationWorking.firstHalf : amounts.vacationWorking.secondHalf
       items.push({
         date: dateIso,
         kind,
@@ -49,6 +53,7 @@ export function buildForecast(
         periodKey: key,
         confirmed: confirmedKeys.includes(key),
         scheduledDate: scheduledIso !== dateIso ? scheduledIso : undefined,
+        vacationDays: vacationWorking > 0 ? vacationWorking : undefined,
       })
     }
   }

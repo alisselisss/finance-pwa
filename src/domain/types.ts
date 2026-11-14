@@ -79,6 +79,8 @@ export interface AppState {
   events: FinanceEvent[]
   trackingStartDate: string | null
   seedFreeMoney: Money
+  /** Дни отпуска (ISO-даты): уменьшают оплату рабочих дней в будущих выплатах. */
+  vacationDays: string[]
 }
 
 export interface IncomeRemainder {
@@ -121,6 +123,8 @@ export interface PaydayForecast {
   confirmed: boolean
   /** Установленная дата выплаты, если фактическая смещена на предыдущий рабочий день. */
   scheduledDate?: string
+  /** Сколько рабочих дней отпуска учтено в этой выплате. */
+  vacationDays?: number
 }
 
 export interface OverspendPreview {

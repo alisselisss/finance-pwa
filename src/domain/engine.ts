@@ -45,6 +45,7 @@ export function emptyState(): AppState {
     events: [],
     trackingStartDate: null,
     seedFreeMoney: ZERO,
+    vacationDays: [],
   }
 }
 
@@ -238,13 +239,17 @@ export function derive(state: AppState, asOfIso: string): DerivedState {
         const incomeId = String(event.payload.incomeId)
         const savings = (event.payload.savings as { accountId: string; amount: Money }[]) ?? []
         const budgetAmount = Number(event.payload.budgetAmount ?? 0) as Money
+        const freeAmount = Number(event.payload.freeAmount ?? 0) as Money
         let allocated = ZERO
         for (const part of savings) {
           if (part.amount < 0) continue
           balances.set(part.accountId, (balances.get(part.accountId) ?? ZERO) + part.amount)
           allocated += part.amount
         }
-        allocated += budgetAmount
+        allocated += budgetAmount + freeAmount
+        if (freeAmount > 0) {
+          freeMoney += freeAmount
+        }
         const current = undistributedMap.get(incomeId)
         if (current) {
           const nextAllocated = current.allocated + allocated
@@ -627,9 +632,13 @@ export function allocateExtraIncome(
     date: string
     savings: { accountId: string; amount: Money }[]
     budgetAmount: Money
+    /** Часть поступления, уходящая напрямую в свободные деньги. */
+    freeAmount?: Money
   },
 ): ActionResult {
+  const freeAmount = input.freeAmount ?? ZERO
   if (input.budgetAmount < 0) return { ok: false, error: 'Сумма на бюджет не может быть отрицательной' }
+  if (freeAmount < 0) return { ok: false, error: 'Сумма в свободные деньги не может быть отрицательной' }
   for (const part of input.savings) {
     if (part.amount < 0) return { ok: false, error: 'Сумма перевода в накопления не может быть отрицательной' }
   }
@@ -638,7 +647,8 @@ export function allocateExtraIncome(
   const incomeEvent = state.events.find((event) => event.id === input.incomeId && event.type === 'extra_income')
   if (!incomeEvent) return { ok: false, error: 'Поступление не найдено' }
   const remaining = remainder?.remaining ?? ZERO
-  const totalParts = input.savings.reduce((sum, part) => sum + part.amount, 0) + input.budgetAmount
+  const totalParts =
+    input.savings.reduce((sum, part) => sum + part.amount, 0) + input.budgetAmount + freeAmount
   if (totalParts > remaining) return { ok: false, error: 'Нельзя распределить больше, чем осталось от поступления' }
   if (totalParts === 0) return { ok: false, error: 'Укажите, как распределить деньги' }
 
@@ -659,6 +669,7 @@ export function allocateExtraIncome(
       incomeId: input.incomeId,
       savings: input.savings.filter((part) => part.amount > 0),
       budgetAmount: input.budgetAmount,
+      freeAmount,
       previousLimit: previewLimit?.previous ?? derived.dailyLimit,
       newLimit: previewLimit?.next ?? derived.dailyLimit,
       remainingDays: previewLimit?.remainingDays ?? 0,
@@ -921,9 +932,32 @@ export function journal(state: AppState) {
   return [...state.events].sort((a, b) => b.date.localeCompare(a.date) || b.seq - a.seq)
 }
 
-export function expectedSalaryAmount(settings: Settings, dateIso: string, kind: PaydayKind): Money {
+export function expectedSalaryAmount(
+  settings: Settings,
+  dateIso: string,
+  kind: PaydayKind,
+  vacationDays: string[] = [],
+): Money {
   const date = requireDate(dateIso)
   const work = workMonthForPayday(date, kind, settings.salaryDay)
-  const amounts = calcPaydayAmounts(settings.grossSalary, work.year, work.month, settings.ndflBps)
+  const amounts = calcPaydayAmounts(
+    settings.grossSalary,
+    work.year,
+    work.month,
+    settings.ndflBps,
+    new Set(vacationDays),
+  )
   return kind === 'advance' ? amounts.advance : amounts.salary
+}
+
+/**
+ * Дни отпуска — не финансовая операция, а настройка: влияет только на
+ * прогноз будущих выплат, не пересчитывая подтверждённые периоды.
+ */
+export function setVacationDays(state: AppState, days: string[]): AppState {
+  const valid = new Set<string>()
+  for (const iso of days) {
+    if (parseISODate(iso)) valid.add(iso)
+  }
+  return { ...state, vacationDays: [...valid].sort() }
 }
