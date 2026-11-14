@@ -14,6 +14,7 @@ import {
   Avatar,
   Button,
   Card,
+  DateField,
   ErrorBanner,
   Field,
   IconButton,
@@ -449,14 +450,12 @@ function PeriodStep({
     >
       <Card title="Последнее поступление" hint="Приложение установлено не в день зарплаты? Укажите последнее фактическое поступление. Прошлые расходы придумывать не будем.">
         <div className="stack">
-          <Field label="Дата последнего аванса или зарплаты">
-            <input
-              className="input"
-              type="date"
-              value={lastPayday}
-              onChange={(event) => setLastPayday(event.target.value)}
-            />
-          </Field>
+          <DateField
+            label="Дата последнего аванса или зарплаты"
+            value={lastPayday}
+            max={today}
+            onChange={setLastPayday}
+          />
           <fieldset className="fieldset">
             <legend>Тип выплаты</legend>
             <label className="inline">

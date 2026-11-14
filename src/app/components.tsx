@@ -4,6 +4,7 @@ import type { AppRoute } from './router'
 import { navigate } from './router'
 import {
   ArrowLeftIcon,
+  CalendarIcon,
   CheckIcon,
   ChevronRightIcon,
   CloseIcon,
@@ -366,6 +367,73 @@ export function MoneyField({
           }).replace('−', '-')
         }}
       />
+    </Field>
+  )
+}
+
+/**
+ * Поле выбора даты: значение показывается в формате ДД/ММ/ГГГГ.
+ * Нативный календарь открывается явно (showPicker) по клику в любую точку
+ * поля — прозрачный input клики не перехватывает. Дату раньше `min`
+ * выбрать нельзя.
+ */
+export function DateField({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+  hint,
+  inputRef,
+}: {
+  label: string
+  value: string
+  min?: string
+  max?: string
+  onChange: (iso: string) => void
+  hint?: string
+  inputRef?: React.RefObject<HTMLInputElement | null>
+}) {
+  const localRef = useRef<HTMLInputElement | null>(null)
+  const display = value ? value.split('-').reverse().join('/') : ''
+
+  function open() {
+    const input = localRef.current
+    if (!input) return
+    try {
+      input.showPicker()
+    } catch {
+      // Браузер без showPicker — открываем хотя бы фокусом (iOS показывает колёсико)
+      input.focus()
+    }
+  }
+
+  return (
+    <Field label={label} hint={hint}>
+      <span className="datefield" onClick={open}>
+        <span className={`datefield-text${value ? '' : ' is-empty'}`}>
+          {value ? display : 'ДД/ММ/ГГГГ'}
+        </span>
+        <CalendarIcon size={18} />
+        <input
+          type="date"
+          className="datefield-native"
+          value={value}
+          min={min}
+          max={max}
+          aria-label={label}
+          onChange={(event) => {
+            const next = event.target.value
+            if (!next) return
+            if (min && next < min) return
+            onChange(next)
+          }}
+          ref={(node) => {
+            localRef.current = node
+            if (inputRef) inputRef.current = node
+          }}
+        />
+      </span>
     </Field>
   )
 }

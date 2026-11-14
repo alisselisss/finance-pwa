@@ -17,6 +17,7 @@ import {
   Amount,
   Banner,
   Button,
+  DateField,
   ErrorBanner,
   Field,
   IconButton,
@@ -404,9 +405,7 @@ function IncomeModal({
               autoFocus
             />
           </Field>
-          <Field label="Дата">
-            <input className="input" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-          </Field>
+          <DateField label="Дата поступления" value={date} onChange={setDate} />
           <Field label="Описание (необязательно)">
             <input className="input" value={description} onChange={(event) => setDescription(event.target.value)} />
           </Field>

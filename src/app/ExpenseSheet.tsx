@@ -4,7 +4,7 @@ import { formatDateShort, parseISODate } from '../domain/dates'
 import { formatMoney, parseMoneyInput } from '../domain/money'
 import type { AppState, OverspendPreview } from '../domain/types'
 import { AlertIcon } from './icons'
-import { Banner, Button, Field, Sheet } from './components'
+import { Banner, Button, DateField, Field, Sheet } from './components'
 
 /**
  * Запись и правка расходов за сегодня и за прошлые дни.
@@ -101,16 +101,13 @@ export function ExpenseSheet({
                 autoFocus
               />
             </Field>
-            <Field label="День" hint={dateIso === today ? 'Сегодня' : 'Прошлый день'}>
-              <input
-                className="input"
-                type="date"
-                value={dateIso}
-                min={trackingStartDate ?? today}
-                max={today}
-                onChange={(event) => switchDate(event.target.value)}
-              />
-            </Field>
+            <DateField
+              label="День"
+              value={dateIso}
+              min={trackingStartDate ?? today}
+              max={today}
+              onChange={switchDate}
+            />
             <div className="sheet-actions">
               <Button block size="lg" disabled={busy} onClick={() => start(editing ? 'add' : 'replace')}>
                 {editing ? 'Добавить к расходам' : 'Сохранить'}

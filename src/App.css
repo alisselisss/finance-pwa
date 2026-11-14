@@ -777,6 +777,62 @@ select.input {
   appearance: auto;
 }
 
+/* Поле даты: видимое оформление + прозрачный нативный календарь поверх */
+.datefield {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.datefield:hover {
+  border-color: var(--border-strong);
+}
+
+.datefield:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.datefield-text {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.datefield-text.is-empty {
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+}
+
+.datefield > svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.datefield-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: none;
+  padding: 0;
+  /* клики принимает оформление — календарь открывается программно,
+     поэтому нативное поле не должно перехватывать нажатия */
+  pointer-events: none;
+}
+
 /* ---------- Переключатели и выбор ---------- */
 
 .segmented {

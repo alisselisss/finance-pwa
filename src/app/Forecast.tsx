@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   addDays,
   compareDates,
@@ -7,6 +7,7 @@ import {
   formatDateLong,
   formatDateShort,
   parseISODate,
+  todayLocal,
   toISODate,
   type CalendarDate,
 } from '../domain/dates'
@@ -15,7 +16,7 @@ import { buildForecast, kindLabel } from '../domain/forecast'
 import { formatMoney } from '../domain/money'
 import { hasCalendarData } from '../data/production-calendar'
 import type { AppState, DerivedState } from '../domain/types'
-import { Banner, Button, Empty, ErrorBanner, Field, IconButton, Screen, Sheet } from './components'
+import { Banner, Button, DateField, Empty, ErrorBanner, IconButton, Screen, Sheet } from './components'
 import { AlertIcon, ChevronRightIcon, TrashIcon, TrendIcon } from './icons'
 import { navigate } from './router'
 
@@ -209,26 +210,54 @@ function VacationSheet({
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const endInputRef = useRef<HTMLInputElement | null>(null)
   const ranges = groupVacationRanges(days)
+
+  /*
+   * Прошедшие отпуска не храним: обе выплаты за месяц отпуска (аванс 10-го
+   * и зарплата 25-го) приходят в том же месяце. Когда месяц закончился,
+   * такой отпуск на расчёт больше не влияет — дни до начала текущего
+   * месяца удаляются.
+   */
+  useEffect(() => {
+    const now = todayLocal()
+    const cutoff = toISODate({ y: now.y, m: now.m, d: 1 })
+    const kept = days.filter((iso) => iso >= cutoff)
+    if (kept.length !== days.length) {
+      void onChange(setVacationDays(state, kept))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function apply(next: string[]) {
     await onChange(setVacationDays(state, next))
   }
 
+  function pickStart(iso: string) {
+    setFrom(iso)
+    if (to && to < iso) setTo('')
+    // сразу открываем выбор последнего дня
+    try {
+      endInputRef.current?.showPicker()
+    } catch {
+      // браузер может запретить программное открытие — не страшно
+    }
+  }
+
   async function addRange() {
     setError(null)
     const start = parseISODate(from)
-    const end = to ? parseISODate(to) : start
+    const end = parseISODate(to)
     if (!start) {
-      setError('Укажите дату начала отпуска')
+      setError('Укажите первый день отпуска')
       return
     }
     if (!end) {
-      setError('Укажите корректную дату окончания')
+      setError('Укажите последний день отпуска')
       return
     }
     if (compareDates(end, start) < 0) {
-      setError('Дата окончания не может быть раньше начала')
+      setError('Последний день не может быть раньше первого')
       return
     }
     const added = eachDate(start, addDays(end, 1))
@@ -239,8 +268,7 @@ function VacationSheet({
     const next = new Set(days)
     for (const date of added) next.add(toISODate(date))
     await apply([...next])
-    setFrom('')
-    setTo('')
+    onClose()
   }
 
   return (
@@ -281,12 +309,14 @@ function VacationSheet({
         ) : (
           <p className="muted">Отпуск пока не указан.</p>
         )}
-        <Field label="Первый день">
-          <input className="input" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-        </Field>
-        <Field label="Последний день" hint="Необязательно, если один день">
-          <input className="input" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-        </Field>
+        <DateField label="Первый день" value={from} onChange={pickStart} />
+        <DateField
+          label="Последний день"
+          value={to}
+          min={from || undefined}
+          onChange={setTo}
+          inputRef={endInputRef}
+        />
         <div className="sheet-actions">
           <Button block variant="soft" onClick={addRange}>
             Добавить отпуск

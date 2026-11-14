@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  DateField,
   Empty,
   ErrorBanner,
   Field,
@@ -132,12 +133,8 @@ export function History({
   return (
     <Screen title="История">
       <div className="row">
-        <Field label="С">
-          <input className="input" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-        </Field>
-        <Field label="По">
-          <input className="input" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-        </Field>
+        <DateField label="С" value={from} onChange={setFrom} />
+        <DateField label="По" value={to} onChange={setTo} />
       </div>
       {items.length === 0 ? (
         <Empty
